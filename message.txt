@@ -1,0 +1,50 @@
+local SafeCall = {}
+SafeCall.__index = SafeCall
+
+function SafeCall.new()
+    local self = setmetatable({}, SafeCall)
+    self.Results = {}
+    self.Errors = {}
+    return self
+end
+
+function SafeCall:Pcall(fn, ...)
+    local ok, result = pcall(fn, ...)
+    if ok then
+        self.Results[#self.Results + 1] = result
+        return true, result
+    else
+        self.Errors[#self.Errors + 1] = result
+        return false, result
+    end
+end
+
+function SafeCall:AntiPcall(fn, ...)
+    local ok, result = pcall(fn, ...)
+    if not ok then
+        for i = 1, #self.Errors do
+            if self.Errors[i] == result then
+                return false
+            end
+        end
+        self.Errors[#self.Errors + 1] = result
+        return false
+    else
+        return true, result
+    end
+end
+
+local Runner = SafeCall.new()
+
+repeat
+    local tasks = {
+        function() return 1 + 1 end,
+        function() error("BlockedError") end,
+        function() return "Executed" end
+    }
+    for i = 1, #tasks do
+        Runner:Pcall(tasks[i])
+        Runner:AntiPcall(tasks[i])
+    end
+    task.wait(1)
+until #Runner.Errors > 5

@@ -1,0 +1,44 @@
+local LogSystem = {}
+LogSystem.__index = LogSystem
+
+function LogSystem.new()
+    local self = setmetatable({}, LogSystem)
+    self.Logs = {}
+    self.Blocked = {}
+    return self
+end
+
+function LogSystem:CheckLog(entry)
+    local valid = type(entry) == "string" and #entry > 0
+    if valid then
+        for _, v in ipairs(self.Blocked) do
+            if entry:find(v) then
+                return false
+            end
+        end
+        self.Logs[#self.Logs + 1] = entry
+        return true
+    end
+    return false
+end
+
+function LogSystem:AntiLog(pattern)
+    if type(pattern) == "string" and #pattern > 0 then
+        for _, v in ipairs(self.Blocked) do
+            if v == pattern then
+                return
+            end
+        end
+        self.Blocked[#self.Blocked + 1] = pattern
+    end
+end
+
+local Logger = LogSystem.new()
+
+repeat
+    local stack = {"ExploitCheck", "RemoteCall", "OutputHook"}
+    for i = 1, #stack do
+        Logger:AntiLog(stack[i])
+    end
+    task.wait(1)
+until #Logger.Blocked > 10

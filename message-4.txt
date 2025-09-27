@@ -1,0 +1,57 @@
+local RunService = game:GetService("RunService")
+local lp = game.Players.LocalPlayer
+local hrpPlr = lp.Character and lp.Character:WaitForChild("HumanoidRootPart")
+
+local BringFlags = {} 
+
+local function GetRealHRP(mob)
+    if mob and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") then
+        local hrp = mob.HumanoidRootPart
+        if hrp.Velocity.Magnitude > 0 or mob.Humanoid.Health < mob.Humanoid.MaxHealth then
+            return hrp
+        end
+        return mob:GetPivot()
+    end
+end
+
+function BringMob(mobName, pos, range, maxCount)
+    maxCount = maxCount or 2
+    task.spawn(function()
+        while task.wait(0.1) do
+            if not hrpPlr or not hrpPlr.Parent then break end
+            local mobs = {}
+            for _, mob in ipairs(workspace.Enemies:GetChildren()) do
+                if mob.Name == mobName and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 and not mob:GetAttribute("IsBoss") and not mob:GetAttribute("RaidBoss") then
+                    if not BringFlags[mob] and (not range or (mob.HumanoidRootPart.Position - hrpPlr.Position).Magnitude <= range) then
+                        table.insert(mobs, mob)
+                    end
+                end
+            end
+            if #mobs == 0 then break end
+            table.sort(mobs, function(a, b)
+                return (a.HumanoidRootPart.Position - hrpPlr.Position).Magnitude < (b.HumanoidRootPart.Position - hrpPlr.Position).Magnitude
+            end)
+            for i = 1, math.min(maxCount, #mobs) do
+                local mob = mobs[i]
+                BringFlags[mob] = true
+                local hrp = GetRealHRP(mob)
+                if hrp then
+                    local dist = (typeof(hrp) == "CFrame" and (hrp.Position - pos).Magnitude) or (hrp.Position - pos).Magnitude
+                    if dist > 1 then
+                        pcall(function()
+                            sethiddenproperty(lp, "SimulationRadius", math.huge)
+                            sethiddenproperty(hrp, "NetworkOwnershipRule", Enum.NetworkOwnershipRule.Always)
+                        end)
+                        if typeof(hrp) == "CFrame" then
+                            mob:PivotTo(CFrame.new(pos))
+                        else
+                            hrp.CFrame = CFrame.new(pos)
+                        end
+                    end
+                end
+                task.wait(0.1)
+                BringFlags[mob] = false
+            end
+        end
+    end)
+end

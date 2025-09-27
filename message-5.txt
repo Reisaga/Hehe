@@ -1,0 +1,219 @@
+_G["Bring Mob"] = true
+local stabilizedMobMonsters = {}
+local plr = game.Players.LocalPlayer
+
+local function SmoothPull(part, targetCFrame, speed)
+	local currentPos = part.Position
+	local targetPos = targetCFrame.Position
+	local newPos = currentPos + (targetPos - currentPos) * speed
+	part.CFrame = CFrame.new(newPos, targetPos)
+end
+
+local function LockPosition(part, targetPos)
+	part.CFrame = CFrame.new(targetPos)
+end
+
+local function TweenObject(Object, Pos, Speed)
+	Speed = Speed or 350
+	local Distance = (Pos.Position - Object.Position).Magnitude
+	local info = TweenInfo.new(Distance / Speed, Enum.EasingStyle.Linear)
+	game:GetService("TweenService"):Create(Object, info, {CFrame = Pos}):Play()
+end
+
+local function GetMobPosition(EnemiesName)
+	local pos, count = nil, 0
+	for _, v in pairs(workspace.Enemies:GetChildren()) do
+		if v.Name == EnemiesName and v:FindFirstChild("HumanoidRootPart") then
+			pos = pos and (pos + v.HumanoidRootPart.Position) or v.HumanoidRootPart.Position
+			count = count + 1
+		end
+	end
+	if count > 0 then
+		return pos / count
+	end
+end
+
+function BringMob(value)
+	if value then
+		local enemies = workspace.Enemies:GetChildren()
+		if #enemies > 0 then
+			local totalpos = {}
+			for _, v in pairs(enemies) do
+				if not totalpos[v.Name] then
+					totalpos[v.Name] = GetMobPosition(v.Name)
+				end
+			end
+			for _, v in pairs(enemies) do
+				if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
+					if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude <= 350 then
+						for k, f in pairs(totalpos) do
+							if v.Name == k and f then
+								local targetCFrame = CFrame.new(f.X, f.Y, f.Z)
+								local dist = (v.HumanoidRootPart.Position - targetCFrame.Position).Magnitude
+								if dist > 3 and dist <= 280 then
+									TweenObject(v.HumanoidRootPart, targetCFrame, 300)
+									v.HumanoidRootPart.CanCollide = false
+									v.Humanoid.WalkSpeed = 0
+									v.Humanoid.JumpPower = 0
+									v.Humanoid:ChangeState(14)
+									pcall(function()
+										sethiddenproperty(plr, "SimulationRadius", math.huge)
+									end)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+task.spawn(function()
+	while task.wait() do
+		if not _G["BringMob"] then
+			continue
+		end
+		local player = game.Players.LocalPlayer
+		local character = player.Character
+		if character and character:FindFirstChild("HumanoidRootPart") then
+			local hrpPlayer = character.HumanoidRootPart
+			local enemiesFolder = workspace:FindFirstChild("Enemies")
+			if enemiesFolder then
+				for monster, data in pairs(stabilizedMobMonsters) do
+					if not monster or not monster.Parent or not monster:FindFirstChild("Humanoid") or not monster:FindFirstChild("HumanoidRootPart") or monster.Humanoid.Health <= 0 or tick() - data.LastUpdate > 2 then
+						stabilizedMobMonsters[monster] = nil
+					end
+				end
+				if CheckMonstersAlive(PosMon) == 0 then
+					stabilizedMobMonsters = {}
+				end
+				local pulledCount = 0
+				for _, v in pairs(enemiesFolder:GetChildren()) do
+					if pulledCount >= 4 then
+						break
+					end
+					if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") then
+						pulledCount = pulledCount + 1
+						v.HumanoidRootPart.CanCollide = false
+						v.Head.CanCollide = false
+						v.HumanoidRootPart.Size = Vector3.new(1, 1, 1)
+						v.Humanoid.WalkSpeed = 0
+						v.Humanoid.JumpPower = 0
+						v.Humanoid:ChangeState(11)
+						v.Humanoid.PlatformStand = true
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, false)
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+						local dist = (v.HumanoidRootPart.Position - PosMon.Position).Magnitude
+						if stabilizedMobMonsters[v] then
+							LockPosition(v.HumanoidRootPart, PosMon.Position)
+						else
+							SmoothPull(v.HumanoidRootPart, PosMon, 0.4)
+							if dist < 2 then
+								LockPosition(v.HumanoidRootPart, PosMon.Position)
+								stabilizedMobMonsters[v] = {
+									Position = PosMon.Position,
+									LastUpdate = tick(),
+									RockSpeedX = math.random(1, 3) * 0.05,
+									RockSpeedZ = math.random(1, 3) * 0.05,
+									FloatPhase = math.random(0, 2 * math.pi)
+								}
+							end
+						end
+					end
+				end
+				local enemies = {}
+				for _, mob in ipairs(enemiesFolder:GetChildren()) do
+					if mob:FindFirstChild("Humanoid") and mob:FindFirstChild("HumanoidRootPart") and mob.Humanoid.Health > 0 then
+						enemies[#enemies + 1] = mob
+					end
+				end
+				local count, radius = #enemies, 6
+				for i, mob in ipairs(enemies) do
+					local hrp = mob:FindFirstChild("HumanoidRootPart")
+					if hrp then
+						local angle = (2 * math.pi / math.max(count, 1)) * (i - 1)
+						local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
+						local targetPos = Vector3.new(hrpPlayer.Position.X + offset.X, hrpPlayer.Position.Y - 3.5, hrpPlayer.Position.Z + offset.Z)
+						local bp = hrp:FindFirstChild("BodyPosition")
+						if not bp then
+							bp = Instance.new("BodyPosition")
+							bp.Name = "BodyPosition"
+							bp.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+							bp.D = 1000
+							bp.P = 5000
+							bp.Parent = hrp
+						end
+						bp.Position = targetPos
+						local bv = hrp:FindFirstChild("BodyVelocity")
+						if bv then
+							bv:Destroy()
+						end
+						task.spawn(function()
+							for _, part in pairs(mob:GetDescendants()) do
+								if part:IsA("BasePart") then
+									part.CanCollide = false
+								end
+							end
+						end)
+						local hum = mob:FindFirstChildOfClass("Humanoid")
+						if hum then
+							hum.WalkSpeed = 0
+							hum.JumpPower = 0
+							pcall(function()
+								hum:ChangeState(14)
+							end)
+						end
+						pcall(function()
+							sethiddenproperty(player, "SimulationRadius", math.huge)
+						end)
+					end
+				end
+			end
+		end
+	end
+end)
+
+spawn(function()
+	game:GetService("RunService").RenderStepped:Connect(function()
+		pcall(function()
+			for monster, data in pairs(stabilizedMobMonsters) do
+				if monster and monster.Parent and monster:FindFirstChild("HumanoidRootPart") and monster.Humanoid.Health > 0 then
+					local t = tick()
+					local offsetX = math.sin(t * data.RockSpeedX + data.FloatPhase) * 0.5
+					local offsetZ = math.cos(t * data.RockSpeedZ + data.FloatPhase) * 0.5
+					local shakeOffset = Vector3.new(offsetX, 0, offsetZ)
+					LockPosition(monster.HumanoidRootPart, data.Position + shakeOffset)
+					data.LastUpdate = tick()
+				else
+					stabilizedMobMonsters[monster] = nil
+				end
+			end
+		end)
+	end)
+end)
+
+BringMob(true)
+
+task.spawn(function()
+	game:GetService("RunService").RenderStepped:Connect(function()
+		pcall(function()
+			for monster, data in pairs(stabilizedMobMonsters) do
+				if monster and monster.Parent and monster:FindFirstChild("HumanoidRootPart") and monster:FindFirstChild("Humanoid") and monster.Humanoid.Health > 0 then
+					local t = tick()
+					local offsetX = math.sin(t * data.RockSpeedX + data.FloatPhase) * 0.5
+					local offsetZ = math.cos(t * data.RockSpeedZ + data.FloatPhase) * 0.5
+					local shakeOffset = Vector3.new(offsetX, 0, offsetZ)
+					LockPosition(monster.HumanoidRootPart, data.Position + shakeOffset)
+					data.LastUpdate = t
+				else
+					stabilizedMobMonsters[monster] = nil
+				end
+			end
+		end)
+	end)
+end)

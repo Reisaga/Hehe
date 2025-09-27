@@ -1,0 +1,121 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+
+-- Cached Assets / Effects with pcall safe fetch
+local GravCachedRootSecond = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second or nil
+local GravCachedRootFourthHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX or nil
+local GravCachedRootFirstHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX or nil
+local EquippedWeaponHitEffect = pcall(function() return Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect end) and (Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect) or nil
+local WeaponDataHitCallbacks = pcall(function() return ReplicatedStorage.Modules.WeaponData.HitCallbacks end) and ReplicatedStorage.Modules.WeaponData.HitCallbacks or nil
+local SlashHitAsset = pcall(function() return ReplicatedStorage.Assets.SlashHit end) and ReplicatedStorage.Assets.SlashHit or nil
+local HitscanSingleShot = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot or nil
+local HitscanShotgun = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun or nil
+local NetReceivedHit = pcall(function() return ReplicatedStorage.Modules.Net["RE/ReceivedHit"] end) and ReplicatedStorage.Modules.Net["RE/ReceivedHit"] or nil
+local NetRegisterAttackPlayEffect = pcall(function() return ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"] end) and (ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"]) or nil
+local DevConsoleServerLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog or nil
+local DevConsoleLogData = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData or nil
+local DevConsoleClientLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog or nil
+
+-- Utility safe call
+local function safe_call(f, ...)
+    local ok, result = pcall(f, ...)
+    if not ok then
+        -- amnf log inside iy
+    end
+    return result
+end
+
+local LocalPlayer = Players.LocalPlayer
+local Net = safe_call(function() return ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net") end)
+local RegisterAttack = Net and Net:FindFirstChild("RE/RegisterAttack")
+local RegisterHit = Net and Net:FindFirstChild("RE/RegisterHit")
+
+-- Remote detection
+local RemoteHolder, RemoteId
+local function scanRemotes()
+    for _, container in next, {ReplicatedStorage.Util, ReplicatedStorage.Common, ReplicatedStorage.Remotes, ReplicatedStorage.Assets, ReplicatedStorage.FX} do
+        for _, child in next, container:GetChildren() do
+            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
+                RemoteHolder, RemoteId = child, child:GetAttribute("Id")
+            end
+        end
+        container.ChildAdded:Connect(function(newChild)
+            if newChild:IsA("RemoteEvent") and newChild:GetAttribute("Id") then
+                RemoteHolder, RemoteId = newChild, newChild:GetAttribute("Id")
+            end
+        end)
+    end
+end
+scanRemotes()
+
+-- Kick hook
+hookfunction(LocalPlayer.Kick, newcclosure(function(...)
+    return nil
+end))
+
+-- Metatable hook
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+local old_index = mt.__index
+mt.__index = newcclosure(function(t, k)
+    if tostring(t) == "CombatUtil" and k == "CanAttack" then
+        return function() return true end
+    end
+    return old_index(t, k)
+end)
+
+-- OOP FastAttack system
+local FastAttackSystem = {}
+FastAttackSystem.__index = FastAttackSystem
+
+function FastAttackSystem:FireHit(victim, part, character, tool)
+    local head = victim:FindFirstChild("Head") or part
+    safe_call(function()
+        RegisterAttack:FireServer()
+        RegisterHit:FireServer(head, {{victim, part}, part}, {}, tostring(LocalPlayer.UserId):sub(2, 4) .. tostring(coroutine.running()):sub(11, 15))
+        if RemoteHolder and RemoteId then
+            cloneref(RemoteHolder):FireServer(
+                string.gsub("RE/RegisterHit", ".", function(c)
+                    return string.char(bit32.bxor(string.byte(c), math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1))
+                end),
+                bit32.bxor(RemoteId + 909090, Net.seed:InvokeServer() * 2),
+                head,
+                {{victim, part}, part}
+            )
+        end
+    end)
+end
+
+function FastAttackSystem:Loop()
+    RunService.Heartbeat:Connect(function()
+        local character = LocalPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        local tool = character and character:FindFirstChildOfClass("Tool")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+        if not (character and hrp and tool and humanoid) then return end
+        if not (tool:GetAttribute("WeaponType") == "Melee" or tool:GetAttribute("WeaponType") == "Sword") then return end
+
+        for _, group in next, {Workspace.Enemies, Workspace.Characters} do
+            for _, target in next, group:GetChildren() do
+                local targetHRP = target:FindFirstChild("HumanoidRootPart")
+                local targetHum = target:FindFirstChild("Humanoid")
+                if target ~= character and targetHRP and targetHum and targetHum.Health > 0 then
+                    if (hrp.Position - targetHRP.Position).Magnitude <= 60 then
+                        for _, bodyPart in next, target:GetChildren() do
+                            if bodyPart:IsA("BasePart") and (hrp.Position - bodyPart.Position).Magnitude <= 60 then
+                                self:FireHit(target, bodyPart, character, tool)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local AttackInstance = setmetatable({}, FastAttackSystem)
+AttackInstance:Loop()
