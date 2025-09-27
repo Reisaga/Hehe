@@ -1,57 +1,199 @@
-local RunService = game:GetService("RunService")
-local lp = game.Players.LocalPlayer
-local hrpPlr = lp.Character and lp.Character:WaitForChild("HumanoidRootPart")
+_G["BringMob"] = true
 
-local BringFlags = {} 
-
-local function GetRealHRP(mob)
-    if mob and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") then
-        local hrp = mob.HumanoidRootPart
-        if hrp.Velocity.Magnitude > 0 or mob.Humanoid.Health < mob.Humanoid.MaxHealth then
-            return hrp
-        end
-        return mob:GetPivot()
+function Distance(target1, taget2)
+    if not taget2 then
+        pcall(function()
+            taget2 = game.Players.LocalPlayer.Character.HumanoidRootPart
+        end)
     end
+    local bbos, bbos2 =
+        pcall(
+        function()
+            a = target1.Position
+            a2 = taget2.Position
+        end
+    )
+    if bbos then
+        return (a - a2).Magnitude
+    end
+end 
+
+task.spawn(function()
+	while task.wait() do
+		if not _G["BringMob"] then break end
+
+		local player = game.Players.LocalPlayer
+		local character = player.Character
+		if not character or not character:FindFirstChild("HumanoidRootPart") then break end
+		local hrpPlayer = character.HumanoidRootPart
+		local enemiesFolder = workspace:FindFirstChild("Enemies")
+		if not enemiesFolder then break end
+
+		local enemies = {}
+		for _, mob in ipairs(enemiesFolder:GetChildren()) do
+			if mob:FindFirstChild("Humanoid") and mob:FindFirstChild("HumanoidRootPart") then
+				if mob.Humanoid.Health > 0 then
+					table.insert(enemies, mob)
+				end
+			end
+		end
+
+		local count = #enemies
+		local radius = 6
+
+		for i, mob in ipairs(enemies) do
+			local hrp = mob:FindFirstChild("HumanoidRootPart")
+			if not hrp then break end
+
+			local angle = (2 * math.pi / math.max(count, 1)) * (i - 1)
+			local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
+			local targetPos = Vector3.new(
+	hrpPlayer.Position.X + offset.X,
+	hrpPlayer.Position.Y - 3.5, 
+	hrpPlayer.Position.Z + offset.Z
+)
+		
+			local bp = hrp:FindFirstChild("BodyPosition")
+			if not bp then
+				bp = Instance.new("BodyPosition")
+				bp.Name = "BodyPosition"
+				bp.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+				bp.D = 1000
+				bp.P = 5000
+				bp.Parent = hrp
+			end
+			bp.Position = targetPos
+
+		
+			local bv = hrp:FindFirstChild("BodyVelocity")
+			if bv then bv:Destroy() end
+
+	
+			task.spawn(function()
+				for _, part in pairs(mob:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end)
+
+			local hum = mob:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum.WalkSpeed = 0
+				hum.JumpPower = 0
+				pcall(function() hum:ChangeState(14) end)
+			end
+
+			pcall(function()
+				sethiddenproperty(player, "SimulationRadius", math.huge)
+			end)
+		end
+	end
+end)
+-- BringMob = function(Mon)
+-- 	Has_Near_Mob = false
+-- 	for _, enemy in pairs(workspace.Enemies:GetChildren()) do
+-- 		local humanoidRootPart = enemy:FindFirstChild("HumanoidRootPart")
+-- 		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
+
+-- 		if mt.ffc(es, enemy) and Distance(humanoidRootPart.Position, Mon.HumanoidRootPart.Position) <= 5000 then
+-- 			local isValidMob = not Mon or (enemy ~= Mon and enemy.Name == Mon.Name)
+
+-- 			if isValidMob then
+-- 				if not enemy:FindFirstChild("HumanoidRootPart"):FindFirstChild("BodyVelocity") then
+-- 					local G = Instance.new("BodyVelocity")
+-- 					G.Parent = enemy:FindFirstChild("HumanoidRootPart")
+-- 					G.Name = "BodyVelocity"
+-- 					G.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+-- 					G.Velocity = Vector3.new(0, 0, 0)
+-- 				end
+
+-- 				if enemy:FindFirstChild("HumanoidRootPart"):FindFirstChild("BodyVelocity") then
+-- 					enemy:FindFirstChild("HumanoidRootPart").BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+-- 					enemy:FindFirstChild("HumanoidRootPart").BodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+-- 				end
+
+-- 				for _, v in pairs(Mon:GetDescendants()) do
+-- 					if v:IsA("BasePart") then
+-- 						v.CanCollide = false
+-- 					end
+-- 				end
+
+-- 				local monPos = Mon.HumanoidRootPart.CFrame.Position
+-- 				local distanceToMon = Distance(humanoidRootPart.Position, monPos)
+
+-- 				if distanceToMon <= 10 then
+-- 					Has_Near_Mob = true
+-- 				end
+-- 				if not Has_Near_Mob and (isnetworkowner(humanoidRootPart) or Distance(humanoidRootPart.Position, Mon.HumanoidRootPart.CFrame.Position) < 300) then
+-- 					humanoidRootPart.CFrame = CFrame.new(Mon.HumanoidRootPart.CFrame.Position) * CFrame.Angles(0, math.rad(0), 0)
+-- 				end
+-- 			end
+-- 		end
+-- 	end
+
+-- end
+
+local plr = game.Players.LocalPlayer
+
+TweenObject = function(Object, Pos, Speed)
+    if Speed == nil then Speed = 350 end
+    local Distance = (Pos.Position - Object.Position).Magnitude
+    local tweenService = game:GetService("TweenService")
+    local info = TweenInfo.new(Distance/Speed, Enum.EasingStyle.Linear)
+    tween1 = tweenService:Create(Object, info, {CFrame = Pos})
+    tween1:Play()
 end
 
-function BringMob(mobName, pos, range, maxCount)
-    maxCount = maxCount or 2
-    task.spawn(function()
-        while task.wait(0.1) do
-            if not hrpPlr or not hrpPlr.Parent then break end
-            local mobs = {}
-            for _, mob in ipairs(workspace.Enemies:GetChildren()) do
-                if mob.Name == mobName and mob:FindFirstChild("HumanoidRootPart") and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 and not mob:GetAttribute("IsBoss") and not mob:GetAttribute("RaidBoss") then
-                    if not BringFlags[mob] and (not range or (mob.HumanoidRootPart.Position - hrpPlr.Position).Magnitude <= range) then
-                        table.insert(mobs, mob)
-                    end
+GetMobPosition = function(EnemiesName)
+    local pos
+    local count = 0
+    for r, v in pairs(workspace.Enemies:GetChildren()) do
+        if v.Name == EnemiesName then
+            if not pos then
+                pos = v.HumanoidRootPart.Position
+            else
+                pos = pos + v.HumanoidRootPart.Position
+            end
+            count = count + 1
+        end
+    end
+    pos = pos / count
+    return pos
+end
+
+BringMob = function(value)
+    if value then
+        local ememe = game.Workspace.Enemies:GetChildren()
+        if #ememe > 0 then
+            local totalpos = {}
+            for _, v in pairs(ememe) do
+                if not totalpos[v.Name] then
+                    totalpos[v.Name] = GetMobPosition(v.Name)
                 end
             end
-            if #mobs == 0 then break end
-            table.sort(mobs, function(a, b)
-                return (a.HumanoidRootPart.Position - hrpPlr.Position).Magnitude < (b.HumanoidRootPart.Position - hrpPlr.Position).Magnitude
-            end)
-            for i = 1, math.min(maxCount, #mobs) do
-                local mob = mobs[i]
-                BringFlags[mob] = true
-                local hrp = GetRealHRP(mob)
-                if hrp then
-                    local dist = (typeof(hrp) == "CFrame" and (hrp.Position - pos).Magnitude) or (hrp.Position - pos).Magnitude
-                    if dist > 1 then
-                        pcall(function()
-                            sethiddenproperty(lp, "SimulationRadius", math.huge)
-                            sethiddenproperty(hrp, "NetworkOwnershipRule", Enum.NetworkOwnershipRule.Always)
-                        end)
-                        if typeof(hrp) == "CFrame" then
-                            mob:PivotTo(CFrame.new(pos))
-                        else
-                            hrp.CFrame = CFrame.new(pos)
+            for _, v in pairs(workspace.Enemies:GetChildren()) do
+                if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
+                    if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude <= 350 then
+                        for k, f in pairs(totalpos) do
+                            if k and v.Name == k and f then
+                                  Gay = CFrame.new(f.X, f.Y, f.Z)
+                                  Cac = (v.HumanoidRootPart.Position - Gay.Position).Magnitude
+
+                                if Cac > 3 and Cac <= 280 then
+                                    TweenObject(v.HumanoidRootPart, Gay, 300)
+                                    v.HumanoidRootPart.CanCollide = false
+                                    v.Humanoid.WalkSpeed = 0
+                                    v.Humanoid.JumpPower = 0
+                                    v.Humanoid:ChangeState(14)
+                                    sethiddenproperty(plr, "SimulationRadius", math.huge)
+                                end
+                            end
                         end
                     end
                 end
-                task.wait(0.1)
-                BringFlags[mob] = false
             end
         end
-    end)
+    end
 end
+BringMob(true)
