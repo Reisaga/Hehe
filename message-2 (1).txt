@@ -1,121 +1,140 @@
+local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
-local Workspace = game:GetService("Workspace")
+local task_wait = task.wait
+local util_xpcall = xpcall
 
--- Cached Assets / Effects with pcall safe fetch
-local GravCachedRootSecond = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second or nil
-local GravCachedRootFourthHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX or nil
-local GravCachedRootFirstHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX or nil
-local EquippedWeaponHitEffect = pcall(function() return Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect end) and (Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect) or nil
-local WeaponDataHitCallbacks = pcall(function() return ReplicatedStorage.Modules.WeaponData.HitCallbacks end) and ReplicatedStorage.Modules.WeaponData.HitCallbacks or nil
-local SlashHitAsset = pcall(function() return ReplicatedStorage.Assets.SlashHit end) and ReplicatedStorage.Assets.SlashHit or nil
-local HitscanSingleShot = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot or nil
-local HitscanShotgun = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun or nil
-local NetReceivedHit = pcall(function() return ReplicatedStorage.Modules.Net["RE/ReceivedHit"] end) and ReplicatedStorage.Modules.Net["RE/ReceivedHit"] or nil
-local NetRegisterAttackPlayEffect = pcall(function() return ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"] end) and (ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"]) or nil
-local DevConsoleServerLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog or nil
-local DevConsoleLogData = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData or nil
-local DevConsoleClientLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog or nil
+local PrivateServerManager = {}
+PrivateServerManager.__index = PrivateServerManager
 
--- Utility safe call
-local function safe_call(f, ...)
-    local ok, result = pcall(f, ...)
-    if not ok then
-        -- amnf log inside iy
-    end
-    return result
+local function silentTrace(err) end
+
+local function safeInvoke(fn, ...)
+	local ok, res = util_xpcall(function() return fn(...) end, silentTrace)
+	if ok then
+		return true, res
+	end
+	return false, nil
 end
 
-local LocalPlayer = Players.LocalPlayer
-local Net = safe_call(function() return ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net") end)
-local RegisterAttack = Net and Net:FindFirstChild("RE/RegisterAttack")
-local RegisterHit = Net and Net:FindFirstChild("RE/RegisterHit")
-
--- Remote detection
-local RemoteHolder, RemoteId
-local function scanRemotes()
-    for _, container in next, {ReplicatedStorage.Util, ReplicatedStorage.Common, ReplicatedStorage.Remotes, ReplicatedStorage.Assets, ReplicatedStorage.FX} do
-        for _, child in next, container:GetChildren() do
-            if child:IsA("RemoteEvent") and child:GetAttribute("Id") then
-                RemoteHolder, RemoteId = child, child:GetAttribute("Id")
-            end
-        end
-        container.ChildAdded:Connect(function(newChild)
-            if newChild:IsA("RemoteEvent") and newChild:GetAttribute("Id") then
-                RemoteHolder, RemoteId = newChild, newChild:GetAttribute("Id")
-            end
-        end)
-    end
+local function clamp(n, a, b)
+	if n < a then return a end
+	if n > b then return b end
+	return n
 end
-scanRemotes()
 
--- Kick hook
-hookfunction(LocalPlayer.Kick, newcclosure(function(...)
-    return nil
-end))
+function PrivateServerManager.new(placeId, opts)
+	local o = opts or {}
+	local self = setmetatable({}, PrivateServerManager)
+	self.placeId = placeId or game.PlaceId
+	self.maxAttempts = clamp(tonumber(o.maxAttempts) or 3, 1, 50)
+	self.baseBackoff = tonumber(o.baseBackoff) or 0.5
+	self.exponential = o.exponential ~= false
+	self.autoRetry = o.autoRetry == true
+	self.reserveTimeout = tonumber(o.reserveTimeout) or 8
+	self._cache = setmetatable({}, { __mode = "k" })
+	self._running = false
+	return self
+end
 
--- Metatable hook
-local mt = getrawmetatable(game)
-setreadonly(mt, false)
-local old_index = mt.__index
-mt.__index = newcclosure(function(t, k)
-    if tostring(t) == "CombatUtil" and k == "CanAttack" then
-        return function() return true end
-    end
-    return old_index(t, k)
+function PrivateServerManager:_isAsyncAllowed()
+	local ok, allowed = safeInvoke(function()
+		return TeleportService.IsAsyncTeleportAllowedToPlaceId and TeleportService:IsAsyncTeleportAllowedToPlaceId(self.placeId)
+	end)
+	if ok and allowed == true then
+		return true
+	end
+	return false
+end
+
+function PrivateServerManager:_reserveServerOnce()
+	local ok, code = safeInvoke(function()
+		return TeleportService.ReserveServer and TeleportService:ReserveServer(self.placeId)
+	end)
+	if ok and type(code) == "string" and #code > 0 then
+		return true, code
+	end
+	return false, nil
+end
+
+function PrivateServerManager:_reserveServerAttempts()
+	local attempt = 0
+	local lastCode = nil
+	while attempt < self.maxAttempts do
+		attempt = attempt + 1
+		local got, code = self:_reserveServerOnce()
+		if got then
+			lastCode = code
+			break
+		end
+		local backoff = self.baseBackoff * (self.exponential and (2 ^ (attempt - 1)) or attempt)
+		task_wait(backoff)
+	end
+	return lastCode
+end
+
+function PrivateServerManager:_teleportWithCode(player, code)
+	local ok = false
+	if type(code) == "string" and #code > 0 and player and player:IsA and player:IsA("Player") then
+		local invoked, _ = safeInvoke(function()
+			TeleportService:TeleportToPrivateServer(self.placeId, code, { player })
+		end)
+		if invoked then ok = true end
+	end
+	return ok
+end
+
+function PrivateServerManager:CreateAndTeleport(player)
+	local resultStatus = false
+	local resultCode = nil
+	local errTag = "invalid_player"
+	if player and player.IsA and player:IsA(player, "Player") then
+		errTag = "not_allowed"
+		local allowed = self:_isAsyncAllowed()
+		if allowed then
+			errTag = "reserve_failed"
+			local code = self:_reserveServerAttempts()
+			if type(code) == "string" and #code > 0 then
+				errTag = "teleport_failed"
+				local tpOk = self:_teleportWithCode(player, code)
+				if tpOk then
+					resultStatus = true
+					resultCode = code
+					errTag = nil
+				else
+					if self.autoRetry then
+						local tries = 0
+						while tries < self.maxAttempts and resultStatus == false do
+							tries = tries + 1
+							task_wait(self.baseBackoff * tries)
+							local newCode = self:_reserveServerAttempts()
+							if type(newCode) == "string" and #newCode > 0 then
+								if self:_teleportWithCode(player, newCode) then
+									resultStatus = true
+									resultCode = newCode
+									errTag = nil
+									break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return resultStatus, resultCode, errTag
+end
+
+setmetatable(PrivateServerManager, {
+	__call = function(_, ...)
+		return PrivateServerManager.new(...)
+	end,
+	__metatable = false
+})
+
+local manager = PrivateServerManager(game.PlaceId, { maxAttempts = 4, baseBackoff = 0.6, autoRetry = true })
+task.spawn(function()
+	local plr = Players.LocalPlayer
+	if plr then
+		manager:CreateAndTeleport(plr)
+	end
 end)
-
--- OOP FastAttack system
-local FastAttackSystem = {}
-FastAttackSystem.__index = FastAttackSystem
-
-function FastAttackSystem:FireHit(victim, part, character, tool)
-    local head = victim:FindFirstChild("Head") or part
-    safe_call(function()
-        RegisterAttack:FireServer()
-        RegisterHit:FireServer(head, {{victim, part}, part}, {}, tostring(LocalPlayer.UserId):sub(2, 4) .. tostring(coroutine.running()):sub(11, 15))
-        if RemoteHolder and RemoteId then
-            cloneref(RemoteHolder):FireServer(
-                string.gsub("RE/RegisterHit", ".", function(c)
-                    return string.char(bit32.bxor(string.byte(c), math.floor(Workspace:GetServerTimeNow() / 10 % 10) + 1))
-                end),
-                bit32.bxor(RemoteId + 909090, Net.seed:InvokeServer() * 2),
-                head,
-                {{victim, part}, part}
-            )
-        end
-    end)
-end
-
-function FastAttackSystem:Loop()
-    RunService.Heartbeat:Connect(function()
-        local character = LocalPlayer.Character
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        local tool = character and character:FindFirstChildOfClass("Tool")
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-
-        if not (character and hrp and tool and humanoid) then return end
-        if not (tool:GetAttribute("WeaponType") == "Melee" or tool:GetAttribute("WeaponType") == "Sword") then return end
-
-        for _, group in next, {Workspace.Enemies, Workspace.Characters} do
-            for _, target in next, group:GetChildren() do
-                local targetHRP = target:FindFirstChild("HumanoidRootPart")
-                local targetHum = target:FindFirstChild("Humanoid")
-                if target ~= character and targetHRP and targetHum and targetHum.Health > 0 then
-                    if (hrp.Position - targetHRP.Position).Magnitude <= 60 then
-                        for _, bodyPart in next, target:GetChildren() do
-                            if bodyPart:IsA("BasePart") and (hrp.Position - bodyPart.Position).Magnitude <= 60 then
-                                self:FireHit(target, bodyPart, character, tool)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
-local AttackInstance = setmetatable({}, FastAttackSystem)
-AttackInstance:Loop()
