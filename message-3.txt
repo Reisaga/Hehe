@@ -1,338 +1,86 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local CoreGui = game:GetService("CoreGui")
+local TeleportService = game:GetService("TeleportService")
 
-local Player = Players.LocalPlayer
-local Modules = ReplicatedStorage:FindFirstChild("Modules")
-local Net = Modules and Modules:FindFirstChild("Net")
-local RegisterAttack = Net and Net:FindFirstChild("RE/RegisterAttack")
-local RegisterHit = Net and Net:FindFirstChild("RE/RegisterHit")
-local ShootGunEvent = Net and Net:FindFirstChild("RE/ShootGunEvent")
-local GunValidator = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Validator2")
+local Safety = {}
+Safety.__index = Safety
 
-local GravCachedRootSecond = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.second or nil
-local GravCachedRootFourthHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.fourth.HitFX or nil
-local GravCachedRootFirstHitFX = pcall(function() return ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX end) and ReplicatedStorage.Assets.GravCachedUltimate.RootEffects.first.HitFX or nil
-local EquippedWeaponHitEffect = pcall(function() return Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect end) and (Workspace.Characters:FindFirstChild("trongngudansx") and Workspace.Characters.trongngudansx.EquippedWeapon.Right.Handle.HitEffect) or nil
-local WeaponDataHitCallbacks = pcall(function() return ReplicatedStorage.Modules.WeaponData.HitCallbacks end) and ReplicatedStorage.Modules.WeaponData.HitCallbacks or nil
-local SlashHitAsset = pcall(function() return ReplicatedStorage.Assets.SlashHit end) and ReplicatedStorage.Assets.SlashHit or nil
-local HitscanSingleShot = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanSingleShot or nil
-local HitscanShotgun = pcall(function() return ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun end) and ReplicatedStorage.Modules.CombatUtil.ShootTypes.HitscanShotgun or nil
-local NetReceivedHit = pcall(function() return ReplicatedStorage.Modules.Net["RE/ReceivedHit"] end) and ReplicatedStorage.Modules.Net["RE/ReceivedHit"] or nil
-local NetRegisterAttackPlayEffect = pcall(function() return ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"] end) and (ReplicatedStorage.Modules.Net["RE/RegisterAttack"] and ReplicatedStorage.Modules.Net["RE/RegisterAttack"]["RE/PlayAttackStartEffect"]) or nil
-local DevConsoleServerLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ServerLog or nil
-local DevConsoleLogData = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.LogData or nil
-local DevConsoleClientLog = pcall(function() return CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog end) and CoreGui.RobloxGui.Modules.DevConsole.Components.Log.ClientLog or nil
+local function silentError(_) end
 
-local Config = {
-    AttackDistance = 65,
-    AttackMobs = true,
-    AttackPlayers = true,
-    AttackCooldown = 0.2,
-    ComboResetTime = 0.3,
-    MaxCombo = 4,
-    HitboxLimbs = {"RightLowerArm", "RightUpperArm", "LeftLowerArm", "LeftUpperArm", "RightHand", "LeftHand"},
-    AutoClickEnabled = true
-}
-
-local FastAttack = {}
-FastAttack.__index = FastAttack
-
-local function safeRequire(mod)
-    local ok, res = pcall(function() return require(mod) end)
-    if ok then return res end
-    return nil
+local function safecall(fn, ...)
+	return xpcall(fn, silentError, ...)
 end
 
-function FastAttack.new()
-    local self = setmetatable({
-        Debounce = 0,
-        ComboDebounce = 0,
-        ShootDebounce = 0,
-        M1Combo = 0,
-        EnemyRootPart = nil,
-        Connections = {},
-        Overheat = {Dragonstorm = {MaxOverheat = 3, Cooldown = 0, TotalOverheat = 0, Distance = 350, Shooting = false}},
-        ShootsPerTarget = {["Dual Flintlock"] = 2},
-        SpecialShoots = {["Skull Guitar"] = "TAP", ["Bazooka"] = "Position", ["Cannon"] = "Position", ["Dragonstorm"] = "Overheat"},
-        _logs = {},
-    }, FastAttack)
-    local ok, res = pcall(function()
-        if Modules then
-            local FlagsMod = Modules:FindFirstChild("Flags")
-            if FlagsMod then
-                local okf, v = pcall(function() return require(FlagsMod).COMBAT_REMOTE_THREAD end)
-                if okf then self.CombatFlags = v end
-            end
-        end
-        local okc, ctrl = pcall(function() return ReplicatedStorage.Controllers and require(ReplicatedStorage.Controllers.CombatController) end)
-        if okc and ctrl then
-            local oku, up = pcall(function() return debug and debug.getupvalue and debug.getupvalue(ctrl.Attack, 9) end)
-            if oku then
-                self.ShootFunction = up or nil
-            end
-        end
-        local okls, LocalScript = pcall(function() return Player and Player:WaitForChild("PlayerScripts") and Player.PlayerScripts:FindFirstChildOfClass("LocalScript") end)
-        if okls and LocalScript and getsenv then
-            local okg, env = pcall(function() return getsenv(LocalScript) end)
-            if okg and env and env._G and env._G.SendHitsToServer then
-                self.HitFunction = env._G.SendHitsToServer
-            end
-        end
-    end)
-    if not ok then
-        table.insert(self._logs, {time = tick(), tag = "init_error", err = tostring(res)})
-    end
-    return self
+function Safety:IsServerExpected()
+	if RunService:IsServer() then
+		local hasPlayer = Players:FindFirstChildOfClass("Player")
+		if not hasPlayer then
+			return false
+		end
+		return true
+	elseif RunService:IsClient() then
+		local lp = Players.LocalPlayer
+		if not lp then
+			return false
+		end
+		return true
+	end
+	return false
 end
 
-function FastAttack:IsEntityAlive(entity)
-    local ok, res = pcall(function()
-        local humanoid = entity and entity:FindFirstChild("Humanoid")
-        return humanoid and humanoid.Health > 0
-    end)
-    if ok then return res end
-    return false
+function Safety:EnvironmentCheck()
+	if not (TeleportService and Players and RunService) then
+		return false
+	end
+	if type(game.PlaceId) ~= "number" or game.PlaceId <= 0 then
+		return false
+	end
+	if not self:IsServerExpected() then
+		return false
+	end
+	return true
 end
 
-function FastAttack:CheckStun(Character, Humanoid, ToolTip)
-    local ok, res = pcall(function()
-        local Stun = Character and Character:FindFirstChild("Stun")
-        local Busy = Character and Character:FindFirstChild("Busy")
-        if Humanoid and Humanoid.Sit and (ToolTip == "Sword" or ToolTip == "Melee" or ToolTip == "Blox Fruit") then
-            return false
-        elseif Stun and Stun.Value > 0 or Busy and Busy.Value then
-            return false
-        end
-        return true
-    end)
-    if ok then return res end
-    return false
+function Safety:CheckIntegrity(fn)
+	if type(fn) ~= "function" then
+		return false
+	end
+	local info = debug.info and safecall(debug.info, fn, "s")
+	if info then
+		if string.find(info, "ReplicatedStorage") or string.find(info, "StarterPlayer") then
+			return true
+		end
+	end
+	return true
 end
 
-function FastAttack:GetBladeHits(Character, Distance)
-    local ok, res = pcall(function()
-        local Position = Character and Character:GetPivot() and Character:GetPivot().Position or Vector3.new()
-        local BladeHits = {}
-        Distance = Distance or Config.AttackDistance
-        local function ProcessTargets(Folder)
-            if not Folder then return end
-            for _, Enemy in ipairs(Folder:GetChildren()) do
-                if Enemy ~= Character then
-                    local alive = FastAttack.IsEntityAlive(self, Enemy)
-                    if alive then
-                        local limb = Config.HitboxLimbs[math.random(#Config.HitboxLimbs)]
-                        local BasePart = Enemy:FindFirstChild(limb) or Enemy:FindFirstChild("HumanoidRootPart")
-                        if BasePart and (Position - BasePart.Position).Magnitude <= Distance then
-                            if not self.EnemyRootPart then
-                                self.EnemyRootPart = BasePart
-                            else
-                                table.insert(BladeHits, {Enemy, BasePart})
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        if Config.AttackMobs and Workspace:FindFirstChild("Enemies") then ProcessTargets(Workspace.Enemies) end
-        if Config.AttackPlayers and Workspace:FindFirstChild("Characters") then ProcessTargets(Workspace.Characters) end
-        return BladeHits
-    end)
-    if ok then return res end
-    return {}
+function Safety:GlobalCheck()
+	local forbidden = { "hookfunction", "getrawmetatable", "setmetatable" }
+	local env = getfenv()
+	for _, name in ipairs(forbidden) do
+		if rawget(env, name) ~= nil then
+			return false
+		end
+	end
+	if rawget(env, "debug") and type(env.debug) == "table" then
+		if rawget(env.debug, "getupvalue") or rawget(env.debug, "sethook") then
+			return false
+		end
+	end
+	return true
 end
 
-function FastAttack:GetClosestEnemy(Character, Distance)
-    local ok, res = pcall(function()
-        local BladeHits = self:GetBladeHits(Character, Distance)
-        local Closest, MinDistance = nil, math.huge
-        local pos = Character and Character:GetPivot() and Character:GetPivot().Position or Vector3.new()
-        for _, Hit in ipairs(BladeHits) do
-            local Magnitude = (pos - Hit[2].Position).Magnitude
-            if Magnitude < MinDistance then
-                MinDistance = Magnitude
-                Closest = Hit[2]
-            end
-        end
-        return Closest
-    end)
-    if ok then return res end
-    return nil
+function Safety:Validate()
+	local okEnv = self:EnvironmentCheck()
+	local okGlob = self:GlobalCheck()
+	return okEnv and okGlob
 end
 
-function FastAttack:GetCombo()
-    local ok, res = pcall(function()
-        local Combo = (tick() - self.ComboDebounce) <= Config.ComboResetTime and self.M1Combo or 0
-        Combo = Combo >= Config.MaxCombo and 1 or Combo + 1
-        self.ComboDebounce = tick()
-        self.M1Combo = Combo
-        return Combo
-    end)
-    if ok then return res end
-    return 0
-end
+setmetatable(Safety, {
+	__call = function(cls, ...)
+		return cls:Validate(...)
+	end,
+	__metatable = false
+})
 
-function FastAttack:ShootInTarget(TargetPosition)
-    local ok, res = pcall(function()
-        local Character = Player and Player.Character
-        if not self:IsEntityAlive(Character) then return false end
-        local Equipped = Character and Character:FindFirstChildOfClass("Tool")
-        if not Equipped or Equipped.ToolTip ~= "Gun" then return false end
-        local Cooldown = Equipped:FindFirstChild("Cooldown") and Equipped.Cooldown.Value or 0.3
-        if (tick() - self.ShootDebounce) < Cooldown then return false end
-        local ShootType = self.SpecialShoots[Equipped.Name] or "Normal"
-        if ShootType == "Position" or (ShootType == "TAP" and Equipped:FindFirstChild("RemoteEvent")) then
-            Equipped:SetAttribute("LocalTotalShots", (Equipped:GetAttribute("LocalTotalShots") or 0) + 1)
-            if GunValidator then
-                pcall(function() GunValidator:FireServer(self:GetValidator2()) end)
-            end
-            if ShootType == "TAP" and Equipped:FindFirstChild("RemoteEvent") then
-                pcall(function() Equipped.RemoteEvent:FireServer("TAP", TargetPosition) end)
-            else
-                if ShootGunEvent then pcall(function() ShootGunEvent:FireServer(TargetPosition) end) end
-            end
-            self.ShootDebounce = tick()
-            return true
-        else
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-            end)
-            self.ShootDebounce = tick()
-            return true
-        end
-    end)
-    if not ok then
-        table.insert(self._logs, {time = tick(), tag = "ShootInTarget_error", err = tostring(res)})
-        return false
-    end
-    return res
-end
-
-function FastAttack:GetValidator2()
-    local ok, res = pcall(function()
-        if not self.ShootFunction then return 0, 0 end
-        local v1 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 15) end) and debug.getupvalue(self.ShootFunction, 15) or 0
-        local v2 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 13) end) and debug.getupvalue(self.ShootFunction, 13) or 0
-        local v3 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 16) end) and debug.getupvalue(self.ShootFunction, 16) or 1
-        local v4 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 17) end) and debug.getupvalue(self.ShootFunction, 17) or 1
-        local v5 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 14) end) and debug.getupvalue(self.ShootFunction, 14) or 0
-        local v6 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 12) end) and debug.getupvalue(self.ShootFunction, 12) or 0
-        local v7 = pcall(function() return debug and debug.getupvalue and debug.getupvalue(self.ShootFunction, 18) end) and debug.getupvalue(self.ShootFunction, 18) or 0
-        local v8 = v6 * v2
-        local v9 = (v5 * v2 + v6 * v1) % v3
-        v9 = (v9 * v3 + v8) % v4
-        v5 = math.floor(v9 / v3)
-        v6 = v9 - v5 * v3
-        v7 = v7 + 1
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 15, v1) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 13, v2) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 16, v3) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 17, v4) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 14, v5) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 12, v6) end end)
-        pcall(function() if debug and debug.setupvalue then debug.setupvalue(self.ShootFunction, 18, v7) end end)
-        return math.floor(v9 / v4 * 16777215), v7
-    end)
-    if ok then return res end
-    return 0, 0
-end
-
-function FastAttack:UseNormalClick(Character, Humanoid, Cooldown)
-    local ok, res = pcall(function()
-        self.EnemyRootPart = nil
-        local BladeHits = self:GetBladeHits(Character)
-        if self.EnemyRootPart then
-            if RegisterAttack then pcall(function() RegisterAttack:FireServer(Cooldown) end) end
-            if self.CombatFlags and self.HitFunction then
-                pcall(function() self.HitFunction(self.EnemyRootPart, BladeHits) end)
-            else
-                if RegisterHit then pcall(function() RegisterHit:FireServer(self.EnemyRootPart, BladeHits) end) end
-            end
-        end
-    end)
-    if not ok then
-        table.insert(self._logs, {time = tick(), tag = "UseNormalClick_error", err = tostring(res)})
-    end
-end
-
-function FastAttack:UseFruitM1(Character, Equipped, Combo)
-    local ok, res = pcall(function()
-        local Targets = self:GetBladeHits(Character)
-        if not Targets[1] then return end
-        local Direction = (Targets[1][2].Position - Character:GetPivot().Position).Unit
-        if Equipped and Equipped:FindFirstChild("LeftClickRemote") then
-            pcall(function() Equipped.LeftClickRemote:FireServer(Direction, Combo) end)
-        end
-    end)
-    if not ok then
-        table.insert(self._logs, {time = tick(), tag = "UseFruitM1_error", err = tostring(res)})
-    end
-end
-
-function FastAttack:Attack()
-    local ok, res = pcall(function()
-        if not Config.AutoClickEnabled or (tick() - self.Debounce) < Config.AttackCooldown then return end
-        local Character = Player and Player.Character
-        if not Character or not self:IsEntityAlive(Character) then return end
-        local Humanoid = Character:FindFirstChild("Humanoid")
-        local Equipped = Character and Character:FindFirstChildOfClass("Tool")
-        if not Equipped then return end
-        local ToolTip = Equipped.ToolTip
-        if not table.find({"Melee", "Blox Fruit", "Sword", "Gun"}, ToolTip) then return end
-        local Cooldown = Equipped:FindFirstChild("Cooldown") and Equipped.Cooldown.Value or Config.AttackCooldown
-        if not self:CheckStun(Character, Humanoid, ToolTip) then return end
-        local Combo = self:GetCombo()
-        Cooldown = Cooldown + (Combo >= Config.MaxCombo and 0.05 or 0)
-        self.Debounce = Combo >= Config.MaxCombo and ToolTip ~= "Gun" and (tick() + 0.05) or tick()
-        if ToolTip == "Blox Fruit" and Equipped:FindFirstChild("LeftClickRemote") then
-            self:UseFruitM1(Character, Equipped, Combo)
-        elseif ToolTip == "Gun" then
-            local Target = self:GetClosestEnemy(Character, 120)
-            if Target then
-                self:ShootInTarget(Target.Position)
-            end
-        else
-            self:UseNormalClick(Character, Humanoid, Cooldown)
-        end
-    end)
-    if not ok then
-        table.insert(self._logs, {time = tick(), tag = "Attack_error", err = tostring(res)})
-    end
-end
-
-function FastAttack:GetLogs()
-    return self._logs
-end
-
-local AttackInstance = FastAttack.new()
-local conn = RunService.Stepped:Connect(function()
-    AttackInstance:Attack()
-end)
-table.insert(AttackInstance.Connections, conn)
-
-local function tryHookGc()
-    for _, v in pairs(getgc(true)) do
-        if typeof(v) == "function" and iscclosure(v) then
-            local name = pcall(function() return debug and debug.getinfo and debug.getinfo(v).name end) and (debug.getinfo(v) and debug.getinfo(v).name) or nil
-            if name == "Attack" or name == "attack" or name == "RegisterHit" then
-                pcall(function()
-                    if hookfunction then
-                        local old = v
-                        hookfunction(v, function(...)
-                            pcall(function() AttackInstance:Attack() end)
-                            return old(...)
-                        end)
-                    end
-                end)
-            end
-        end
-    end
-end
-pcall(function() tryHookGc() end)
-
-return FastAttack
+return Safety
