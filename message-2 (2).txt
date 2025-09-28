@@ -7,139 +7,139 @@ SkillSystem.Waiting = {}
 
 
 function SkillSystem:GetDistance(target1, target2)
-    if not target2 then
-        pcall(function()
-            local lp = game.Players.LocalPlayer
-            if lp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
-                target2 = lp.Character.HumanoidRootPart
-            end
-        end)
-    end
-    local success, pos1, pos2 = pcall(function()
-        return target1.Position, target2.Position
-    end)
-    if success and pos1 and pos2 then
-        return (pos1 - pos2).Magnitude
-    end
+	if not target2 then
+		pcall(function()
+			local lp = game.Players.LocalPlayer
+			if lp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
+				target2 = lp.Character.HumanoidRootPart
+			end
+		end)
+	end
+	local success, pos1, pos2 = pcall(function()
+		return target1.Position, target2.Position
+	end)
+	if success and pos1 and pos2 then
+		return (pos1 - pos2).Magnitude
+	end
 end
 
 function SkillSystem.new()
-    return setmetatable({}, SkillSystem)
+	return setmetatable({}, SkillSystem)
 end
 
 function SkillSystem:Core(action, ...)
-    if action == "Random" then
-        return math.random(1, 100) / 100
-    elseif action == "GetRoot" then
-        local chr = ...
-        return chr and chr:FindFirstChild("HumanoidRootPart")
-    elseif action == "GetStat" then
-        local n, s = ...
-        local state = States and States[n.Name]
-        if state then
-            local obj = state:FindFirstChild(s, true)
-            if obj then
-                return obj.Value
-            end
-        end
-    elseif action == "WaitValid" then
-        local name, func = ...
-        self.Waiting[name] = self.Waiting[name] or {}
-        table.insert(self.Waiting[name], func)
-    elseif action == "Valid" then
-        local name, args = ...
-        local waiters = self.Waiting[name]
-        if waiters then
-            for i = 1, #waiters do
-                task.spawn(waiters[i], table.unpack(args))
-            end
-            self.Waiting[name] = nil
-        end
-    elseif action == "DashToBehind" then
-        local target = ...
-        local root = self:Core("GetRoot", target)
-        if root then
-            local targetCfr = root.CFrame
-            local targetPos = (targetCfr * CFrame.new(0, 0, -1)).p
-            local myRoot = Client.Character and Client.Character:FindFirstChild("HumanoidRootPart")
-            if myRoot then
-                local myCFrame = myRoot.CFrame
-                local direction = myCFrame.p - targetCfr.p
-                local right = targetCfr.RightVector
-            end
-        end
-    elseif action == "IsUsingSkill" then
-        local v = ...
-        return v.Character and v.Character:FindFirstChildOfClass("Tool") ~= nil
-    elseif action == "AddCheckSkill" then
-        local v = ...
-        local hum = v:FindFirstChildOfClass("Humanoid")
-        if hum and hum.MaxHealth < 500000 then
-            local root = self:Core("GetRoot", v)
-            if root and self:GetDistance(root, CFrame.new(-5543.5327148438, 313.80062866211, -2964.2585449219)) > 1500 then
-                local animator = hum:FindFirstChildOfClass("Animator")
-                if animator then
-                    animator.AnimationPlayed:Connect(function(anitrack)
-                        if anitrack and anitrack.Animation and (anitrack.Animation.AnimationId ~= "rbxassetid://9802959564" and anitrack.Animation.AnimationId ~= "rbxassetid://507766388" and anitrack.Animation.AnimationId ~= "http://www.roblox.com/asset/?id=9884584522") then
-                            local realTimePos = anitrack.TimePosition
-                            if realTimePos <= 0 then
-                                realTimePos = 1.5
-                            end
-                            if getgenv().DogdeUntil and tick() < getgenv().DogdeUntil then
-                                getgenv().DogdeUntil = getgenv().DogdeUntil + math.floor(realTimePos)
-                            else
-                                getgenv().DogdeUntil = tick() + math.floor(realTimePos)
-                            end
-                            if getgenv().tween then
-                                getgenv().tween:Cancel()
-                                getgenv().tween = nil
-                            end
-                        end
-                    end)
-                end
-            end
-        end
-    end
+	if action == "Random" then
+		return math.random(1, 100) / 100
+	elseif action == "GetRoot" then
+		local chr = ...
+		return chr and chr:FindFirstChild("HumanoidRootPart")
+	elseif action == "GetStat" then
+		local n, s = ...
+		local state = States and States[n.Name]
+		if state then
+			local obj = state:FindFirstChild(s, true)
+			if obj then
+				return obj.Value
+			end
+		end
+	elseif action == "WaitValid" then
+		local name, func = ...
+		self.Waiting[name] = self.Waiting[name] or {}
+		table.insert(self.Waiting[name], func)
+	elseif action == "Valid" then
+		local name, args = ...
+		local waiters = self.Waiting[name]
+		if waiters then
+			for i = 1, #waiters do
+				task.spawn(waiters[i], table.unpack(args))
+			end
+			self.Waiting[name] = nil
+		end
+	elseif action == "DashToBehind" then
+		local target = ...
+		local root = self:Core("GetRoot", target)
+		if root then
+			local targetCfr = root.CFrame
+			local targetPos = (targetCfr * CFrame.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))).p
+			local myRoot = Client.Character and Client.Character:FindFirstChild("HumanoidRootPart")
+			if myRoot then
+				local myCFrame = myRoot.CFrame
+				local direction = myCFrame.p - targetCfr.p
+				local right = targetCfr.RightVector
+			end
+		end
+	elseif action == "IsUsingSkill" then
+		local v = ...
+		return v.Character and v.Character:FindFirstChildOfClass("Tool") ~= nil
+	elseif action == "AddCheckSkill" then
+		local v = ...
+		local hum = v:FindFirstChildOfClass("Humanoid")
+		if hum and hum.MaxHealth < 500000 then
+			local root = self:Core("GetRoot", v)
+			if root and self:GetDistance(root, CFrame.new(math.random(-6000, -5000), math.random(250, 400), math.random(-3100, -2800))) > 1500 then
+				local animator = hum:FindFirstChildOfClass("Animator")
+				if animator then
+					animator.AnimationPlayed:Connect(function(anitrack)
+						if anitrack and anitrack.Animation and (anitrack.Animation.AnimationId ~= "rbxassetid://9802959564" and anitrack.Animation.AnimationId ~= "rbxassetid://507766388" and anitrack.Animation.AnimationId ~= "http://www.roblox.com/asset/?id=9884584522") then
+							local realTimePos = anitrack.TimePosition
+							if realTimePos <= 0 then
+								realTimePos = 1.5
+							end
+							if getgenv().DogdeUntil and tick() < getgenv().DogdeUntil then
+								getgenv().DogdeUntil = getgenv().DogdeUntil + math.floor(realTimePos)
+							else
+								getgenv().DogdeUntil = tick() + math.floor(realTimePos)
+							end
+							if getgenv().tween then
+								getgenv().tween:Cancel()
+								getgenv().tween = nil
+							end
+						end
+					end)
+				end
+			end
+		end
+	end
 end
 
 if tostring(debug.getupvalues(Client)[1]) == Client.Name then
-    if d[2] ~= Client.Character then
-        if Legit.Enabled and d[5] < 0.15 then
-        else
-            SkillSystem:Core("WaitValid", d[2].Name, function()
-                if Legit.Enabled then
-                    if SkillSystem:Core("Random") > Legit.Chance or SkillSystem:Core("Random") > Legit.Chance then
-                    else
-                    end
-                end
-            end)
-        end
-    end
+	if d[2] ~= Client.Character then
+		if Legit.Enabled and d[5] < 0.15 then
+		else
+			SkillSystem:Core("WaitValid", d[2].Name, function()
+				if Legit.Enabled then
+					if SkillSystem:Core("Random") > Legit.Chance or SkillSystem:Core("Random") > Legit.Chance then
+					else
+					end
+				end
+			end)
+		end
+	end
 end
 
 local skillSys = SkillSystem.new()
 
 for i, v in pairs(Effect) do
-    shared.BaseEffectFunction[i] = shared.BaseEffectFunction[i] or v
-    Effect[i] = function(d, ...)
-        task.spawn(function()
-            if Enabled then
-                if type(d) == "table" and typeof(d[2]) == "Instance" then
-                    local root = skillSys:Core("GetRoot", d[2])
-                    if root then
-                        local Distance = Client:DistanceFromCharacter(root.Position)
-                        if Distance > 10 then
-                        else
-                        end
-                    end
-                end
-            end
-        end)
-    end
+	shared.BaseEffectFunction[i] = shared.BaseEffectFunction[i] or v
+	Effect[i] = function(d, ...)
+		task.spawn(function()
+			if Enabled then
+				if type(d) == "table" and typeof(d[2]) == "Instance" then
+					local root = skillSys:Core("GetRoot", d[2])
+					if root then
+						local Distance = Client:DistanceFromCharacter(root.Position)
+						if Distance > 10 then
+						else
+						end
+					end
+				end
+			end
+		end)
+	end
 end
 
 RunService.Stepped:Connect(function()
-    for _, v in pairs(workspace:GetChildren()) do
-        skillSys:Core("AddCheckSkill", v)
-    end
+	for _, v in pairs(workspace:GetChildren()) do
+		skillSys:Core("AddCheckSkill", v)
+	end
 end)
