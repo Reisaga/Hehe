@@ -5,41 +5,26 @@ local SkillSystem = {}
 SkillSystem.__index = SkillSystem
 SkillSystem.Waiting = {}
 
+
 function SkillSystem:GetDistance(target1, target2)
-	local ok, pos1, pos2 = xpcall(function()
-		if not target2 then
+	if not target2 then
+		pcall(function()
 			local lp = game.Players.LocalPlayer
 			if lp and lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") then
 				target2 = lp.Character.HumanoidRootPart
 			end
-		end
+		end)
+	end
+	local success, pos1, pos2 = pcall(function()
 		return target1.Position, target2.Position
-	end, function()
 	end)
-	if ok and pos1 and pos2 then
+	if success and pos1 and pos2 then
 		return (pos1 - pos2).Magnitude
 	end
 end
 
 function SkillSystem.new()
 	return setmetatable({}, SkillSystem)
-end
-
-function SkillSystem:RoundVector3Down(vec)
-	return Vector3.new(math.floor(vec.X / 10) * 10, math.floor(vec.Y / 10) * 10, math.floor(vec.Z / 10) * 10)
-end
-
-local Angle, lastChange = 30, tick()
-function SkillSystem:CaculateCircreDirection(Position)
-	if Angle > 50000 then
-		Angle = 60
-	end
-	if tick() - lastChange > 0.4 then
-		Angle = Angle + 80
-		lastChange = tick()
-	end
-	local sum = Position + Vector3.new(math.cos(math.rad(Angle)) * 40, 0, math.sin(math.rad(Angle)) * 40)
-	return CFrame.new(self:RoundVector3Down(sum))
 end
 
 function SkillSystem:Core(action, ...)
@@ -75,7 +60,7 @@ function SkillSystem:Core(action, ...)
 		local root = self:Core("GetRoot", target)
 		if root then
 			local targetCfr = root.CFrame
-			local targetPos = (targetCfr * CFrame.new(self:CaculateCircreDirection(-10, -5, 0, 5, 10), self:CaculateCircreDirection(-10, -5, 0, 5, 10), self:CaculateCircreDirection(-10, -5, 0, 5, 10))).p
+			local targetPos = (targetCfr * CFrame.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))).p
 			local myRoot = Client.Character and Client.Character:FindFirstChild("HumanoidRootPart")
 			if myRoot then
 				local myCFrame = myRoot.CFrame
@@ -91,7 +76,7 @@ function SkillSystem:Core(action, ...)
 		local hum = v:FindFirstChildOfClass("Humanoid")
 		if hum and hum.MaxHealth < 500000 then
 			local root = self:Core("GetRoot", v)
-			if root and self:GetDistance(root, CFrame.new(self:CaculateCircreDirection(-6000, -5800, -5600, -5400, -5200, -5000), self:CaculateCircreDirection(250, 300, 350, 400), self:CaculateCircreDirection(-3100, -3000, -2900, -2800))) > 1500 then
+			if root and self:GetDistance(root, CFrame.new(math.random(-6000, -5000), math.random(250, 400), math.random(-3100, -2800))) > 1500 then
 				local animator = hum:FindFirstChildOfClass("Animator")
 				if animator then
 					animator.AnimationPlayed:Connect(function(anitrack)
