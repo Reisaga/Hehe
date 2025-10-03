@@ -126,7 +126,7 @@ BringMob = function(value)
 							if k and v.Name == k and f then
 								Gay = CFrame.new(f.X, f.Y, f.Z)
 								Cac = (v.HumanoidRootPart.Position - Gay.Position).Magnitude
-								if Cac > 2 and Cac <= 500 then
+								if Cac > 10 and Cac <= 500 then
 									TweenObject(v.HumanoidRootPart, Gay, 300)
 									v.HumanoidRootPart.CanCollide = false
 									v.Humanoid.WalkSpeed = 0
@@ -172,7 +172,7 @@ task.spawn(function()
 		end
 
 		local count = #enemies
-		local radius = 3
+		local radius = 10
 
 		for i, mob in ipairs(enemies) do
 			local hrp = mob:FindFirstChild("HumanoidRootPart")
