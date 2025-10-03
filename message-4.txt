@@ -39,7 +39,7 @@ end
 -- 		local humanoidRootPart = enemy:FindFirstChild("HumanoidRootPart")
 -- 		local humanoid = enemy:FindFirstChildOfClass("Humanoid")
 
--- 		if GetConnectionEnemies(es, enemy) and Distance(humanoidRootPart.Position, Mon.HumanoidRootPart.Position) <= 5000 then
+-- 		if GetConnectionEnemies(es, enemy) and Distance(humanoidRootPart.Position, Mon.HumanoidRootPart.Position) <= 1e9 then
 -- 			local isValidMob = not Mon or (enemy ~= Mon and enemy.Name == Mon.Name)
 
 -- 			if isValidMob then
@@ -121,12 +121,12 @@ BringMob = function(value)
 			end
 			for _, v in pairs(workspace.Enemies:GetChildren()) do
 				if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
-					if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude <= 350 then
+					if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude <= 1e9 then
 						for k, f in pairs(totalpos) do
 							if k and v.Name == k and f then
 								Gay = CFrame.new(f.X, f.Y, f.Z)
 								Cac = (v.HumanoidRootPart.Position - Gay.Position).Magnitude
-								if Cac > 3 and Cac <= 280 then
+								if Cac > 2 and Cac <= 500 then
 									TweenObject(v.HumanoidRootPart, Gay, 300)
 									v.HumanoidRootPart.CanCollide = false
 									v.Humanoid.WalkSpeed = 0
@@ -172,7 +172,7 @@ task.spawn(function()
 		end
 
 		local count = #enemies
-		local radius = 6
+		local radius = 3
 
 		for i, mob in ipairs(enemies) do
 			local hrp = mob:FindFirstChild("HumanoidRootPart")
