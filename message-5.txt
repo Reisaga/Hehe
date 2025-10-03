@@ -1,67 +1,222 @@
-_G["Bring Mob"] = true
-local stabilizedMobMonsters = {}
-local plr = game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local CameraShakerR = require(ReplicatedStorage.Util.CameraShaker)
+local ShootGunEvent = ReplicatedStorage.Modules.Net["RE/ShootGunEvent"]
 
-local function SmoothPull(part, targetCFrame, speed)
-	local currentPos = part.Position
-	local targetPos = targetCFrame.Position
-	local newPos = currentPos + (targetPos - currentPos) * speed
-	part.CFrame = CFrame.new(newPos, targetPos)
+local FastAttack = {
+	Distance = 50,
+	attackMobs = true,
+	attackPlayers = true,
+	Equipped = nil,
+	Debounce = 0,
+	ComboDebounce = 0,
+	ShootDebounce = 0,
+	M1Combo = 0,
+	Overheat = {["Dragonstorm"] = {MaxOverheat = 3,Cooldown = 0,TotalOverheat = 0,Distance = 350,Shooting = false}},
+	ShootsPerTarget = {["Dual Flintlock"] = 2},
+	SpecialShoots = {["Skull Guitar"] = "TAP",["Bazooka"] = "Position",["Cannon"] = "Position",["Dragonstorm"] = "Overheat"},
+	HitboxLimbs = {"RightLowerArm","RightUpperArm","LeftLowerArm","LeftUpperArm","RightHand","LeftHand"}
+}
+
+local cl = {"PirateBasic","PirateBrigade","FishBoat"}
+local Characters = Workspace:WaitForChild("Characters")
+local Enemies = Workspace:WaitForChild("Enemies")
+local SeaBeasts = Workspace:WaitForChild("SeaBeasts")
+local Net = ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Net")
+local RE_ShootGunEvent = Net:WaitForChild("RE/ShootGunEvent")
+
+local function IsAlive(c)
+	return c and c:FindFirstChild("Humanoid") and c.Humanoid.Health > 0 and c:FindFirstChild("HumanoidRootPart") and not c:FindFirstChild("VehicleSeat")
 end
 
-local function LockPosition(part, targetPos)
-	part.CFrame = CFrame.new(targetPos)
+function FastAttack:GetAllBladeHits(character, distance)
+    local pos = character:GetPivot().Position
+    local hits = {}
+    distance = distance or self.Distance
+
+    local function process(folder, enabled)
+        if not enabled then return end
+        for _, enemy in ipairs(folder:GetChildren()) do
+            local part = enemy.PrimaryPart
+            if part and (pos - part.Position).Magnitude <= distance then
+                table.insert(hits, {enemy, part})
+            end
+        end
+    end
+
+    process(workspace.Enemies, self.attackMobs)
+    process(workspace.Characters, self.attackPlayers)
+    return hits
 end
 
-local function TweenObject(Object, Pos, Speed)
-	Speed = Speed or 350
-	local Distance = (Pos.Position - Object.Position).Magnitude
-	local info = TweenInfo.new(Distance / Speed, Enum.EasingStyle.Linear)
-	game:GetService("TweenService"):Create(Object, info, {CFrame = Pos}):Play()
+function FastAttack:GetClosestEnemy(character, distance)
+    local hits = self:GetAllBladeHits(character, distance)
+    local best, bestDist
+    for _, h in ipairs(hits) do
+        local d = (character:GetPivot().Position - h[2].Position).Magnitude
+        if not bestDist or d < bestDist then
+            best, bestDist = h[2], d
+        end
+    end
+    return best
 end
 
-local function GetMobPosition(EnemiesName)
-	local pos, count = nil, 0
-	for _, v in pairs(workspace.Enemies:GetChildren()) do
-		if v.Name == EnemiesName and v:FindFirstChild("HumanoidRootPart") then
-			pos = pos and (pos + v.HumanoidRootPart.Position) or v.HumanoidRootPart.Position
-			count = count + 1
-		end
-	end
-	if count > 0 then
-		return pos / count
-	end
+function FastAttack:GetGunHits(character, distance)
+    local hits = self:GetAllBladeHits(character, distance)
+    local group = {}
+    for _, h in ipairs(hits) do
+        if not group[1] or (h[2].Position - group[1].Position).Magnitude <= 10 then
+            table.insert(group, h[2])
+        end
+    end
+    return group
 end
 
-function BringMob(value)
-	if value then
-		local enemies = workspace.Enemies:GetChildren()
-		if #enemies > 0 then
-			local totalpos = {}
-			for _, v in pairs(enemies) do
-				if not totalpos[v.Name] then
-					totalpos[v.Name] = GetMobPosition(v.Name)
+function FastAttack:GetCombo()
+    local combo = (tick() - self.ComboDebounce <= 0.4) and self.M1Combo or 0
+    combo = (combo >= 4) and 1 or (combo + 1)
+    self.ComboDebounce = tick()
+    self.M1Combo = combo
+    return combo
+end
+
+function FastAttack:UseGunShoot(Character, Equipped)
+    if not (Equipped and Equipped.Enabled) then return end
+
+    local shootType = self.SpecialShoots[Equipped.Name] or "Normal"
+
+    local function incrementShots()
+        Equipped:SetAttribute("LocalTotalShots", (Equipped:GetAttribute("LocalTotalShots") or 0) + 1)
+        GunValidator:FireServer(self:GetValidator2())
+    end
+
+    if shootType == "Overheat" then
+        local data = self.Overheat[Equipped.Name]
+        if not data or data.Shooting then return end
+
+        local target = self:GetClosestEnemy(Character, data.Distance or 100)
+        if not target then return end
+
+        data.Shooting = true
+        while Equipped and Equipped.Parent == Player.Character and data.TotalOverheat < data.MaxOverheat do
+            if target and target.Parent and IsAlive(target.Parent) then
+                incrementShots()
+                RE_ShootGunEvent:FireServer(target.Position, { target })
+                data.TotalOverheat += task.wait(data.Cooldown)
+            else
+                break
+            end
+        end
+        while data.TotalOverheat > 0 do
+            data.TotalOverheat = math.clamp(data.TotalOverheat - task.wait(), 0, data.MaxOverheat)
+        end
+        data.Shooting = false
+
+    elseif shootType == "Normal" then
+        local hits = self:GetGunHits(Character, 120)
+        local targetPos = hits[1] and hits[1].Position
+        if not targetPos then return end
+
+        incrementShots()
+        for i = 1, (self.ShootsPerTarget[Equipped.Name] or 1) do
+            RE_ShootGunEvent:FireServer(targetPos, hits)
+        end
+
+    elseif shootType == "Position" or (shootType == "TAP" and Equipped:FindFirstChild("RemoteEvent")) then
+        local target = self:GetClosestEnemy(Character, 200)
+        if not target then return end
+
+        if self.ShootsFunctions[Equipped.Name] then
+            return self.ShootsFunctions[Equipped.Name](self, Equipped, target.Position)
+        end
+
+        incrementShots()
+        if shootType == "TAP" then
+            Equipped.RemoteEvent:FireServer("TAP", target.Position)
+        else
+            RE_ShootGunEvent:FireServer(target.Position)
+        end
+    end
+end
+
+function FastAttack:GetValidator2()
+    local v1 = getupvalue(self.ShootFunction, 15)
+    local v2 = getupvalue(self.ShootFunction, 13)
+    local v3 = getupvalue(self.ShootFunction, 16)
+    local v4 = getupvalue(self.ShootFunction, 17)
+    local v5 = getupvalue(self.ShootFunction, 14)
+    local v6 = getupvalue(self.ShootFunction, 12)
+    local v7 = getupvalue(self.ShootFunction, 18)
+        
+    local v8 = v6 * v2
+    local v9 = (v5 * v2 + v6 * v1) % v3
+    v9 = (v9 * v3 + v8) % v4
+    v5 = math.floor(v9 / v3)
+    v6 = v9 - v5 * v3
+    v7 = v7 + 1    
+    setupvalue(self.ShootFunction, 15, v1)
+    setupvalue(self.ShootFunction, 13, v2)
+    setupvalue(self.ShootFunction, 16, v3)
+    setupvalue(self.ShootFunction, 17, v4)
+    setupvalue(self.ShootFunction, 14, v5)
+    setupvalue(self.ShootFunction, 12, v6)
+    setupvalue(self.ShootFunction, 18, v7)
+        
+    return math.floor(v9 / v4 * 16777215), v7
+end	
+
+local function getHead()
+	local r = {}
+	for _,v in next, Enemies:GetChildren() do
+		if table.find(cl,v.Name) and v:FindFirstChild("Body") then
+			for _,v1 in next,v.Body:GetChildren() do
+				if (v1.Position-LocalPlayer.Character.HumanoidRootPart.Position).Magnitude<500 then
+					r[#r+1]=v1
+					return r
 				end
 			end
-			for _, v in pairs(enemies) do
-				if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
-					if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude <= 350 then
-						for k, f in pairs(totalpos) do
-							if v.Name == k and f then
-								local targetCFrame = CFrame.new(f.X, f.Y, f.Z)
-								local dist = (v.HumanoidRootPart.Position - targetCFrame.Position).Magnitude
-								if dist > 3 and dist <= 280 then
-									TweenObject(v.HumanoidRootPart, targetCFrame, 300)
-									v.HumanoidRootPart.CanCollide = false
-									v.Humanoid.WalkSpeed = 0
-									v.Humanoid.JumpPower = 0
-									v.Humanoid:ChangeState(14)
-									pcall(function()
-										sethiddenproperty(plr, "SimulationRadius", math.huge)
-									end)
-								end
-							end
-						end
+		elseif v:FindFirstChild("Humanoid") and v.Humanoid.Health>0 then
+			if (v.Head.Position-LocalPlayer.Character.HumanoidRootPart.Position).Magnitude<100 then
+				r[#r+1]=v.HumanoidRootPart
+			end
+		end
+	end
+	if #r==0 then
+		for _,v in next, SeaBeasts:GetChildren() do
+			if v:FindFirstChild("RootPart") then
+				if (v.RootPart.Position-LocalPlayer.Character.HumanoidRootPart.Position).Magnitude<500 then
+					r[#r+1]=v.RootPart
+				end
+			end
+		end
+	end
+	return r
+end
+
+local function FastShooted()
+	local h=getHead()
+	for i=1,#h do
+		if #h>0 then
+			local self=FastAttack
+			local Character=LocalPlayer.Character
+			if not IsAlive(Character) then return end
+			local Humanoid=Character.Humanoid
+			local Equipped=Character:FindFirstChildOfClass("Tool")
+			local ToolTip=Equipped and Equipped.ToolTip
+			if Equipped and (ToolTip=="Gun" or ToolTip=="Melee" or ToolTip=="Blox Fruit" or ToolTip=="Sword") then
+				local Cooldown=Equipped:FindFirstChild("Cooldown") and Equipped.Cooldown.Value or 0.3
+				if (tick()-self.Debounce)>=Cooldown and self:CheckStun(ToolTip,Character,Humanoid) then
+					local Combo=self:GetCombo()
+					Cooldown+=Combo>=4 and 0.05 or 0
+					self.Equipped=Equipped
+					self.Debounce=Combo>=4 and ToolTip~="Gun" and (tick()+0.05) or tick()
+					if ToolTip=="Gun" then
+						self:UseGunShoot(Character,Equipped)
+						ShootGunEvent:FireServer(h[i].Position,{[1]=h[i]})
+						ShootGunEvent:FireServer(h[i].Position,{[1]=h[i]})
+						sethiddenproperty(LocalPlayer,"SimulationRadius",math.huge)
 					end
 				end
 			end
@@ -69,151 +224,13 @@ function BringMob(value)
 	end
 end
 
-task.spawn(function()
-	while task.wait() do
-		if not _G["BringMob"] then
-			continue
+for i=1,20 do
+	task.spawn(function()
+		while task.wait() do
+			local ok,err=xpcall(FastShooted,function()end)
+			if not ok then break end
+			CameraShakerR:Stop()
+			if not FastShot then break end
 		end
-		local player = game.Players.LocalPlayer
-		local character = player.Character
-		if character and character:FindFirstChild("HumanoidRootPart") then
-			local hrpPlayer = character.HumanoidRootPart
-			local enemiesFolder = workspace:FindFirstChild("Enemies")
-			if enemiesFolder then
-				for monster, data in pairs(stabilizedMobMonsters) do
-					if not monster or not monster.Parent or not monster:FindFirstChild("Humanoid") or not monster:FindFirstChild("HumanoidRootPart") or monster.Humanoid.Health <= 0 or tick() - data.LastUpdate > 2 then
-						stabilizedMobMonsters[monster] = nil
-					end
-				end
-				if CheckMonstersAlive(PosMon) == 0 then
-					stabilizedMobMonsters = {}
-				end
-				local pulledCount = 0
-				for _, v in pairs(enemiesFolder:GetChildren()) do
-					if pulledCount >= 4 then
-						break
-					end
-					if v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") then
-						pulledCount = pulledCount + 1
-						v.HumanoidRootPart.CanCollide = false
-						v.Head.CanCollide = false
-						v.HumanoidRootPart.Size = Vector3.new(1, 1, 1)
-						v.Humanoid.WalkSpeed = 0
-						v.Humanoid.JumpPower = 0
-						v.Humanoid:ChangeState(11)
-						v.Humanoid.PlatformStand = true
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, false)
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-						v.Humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-						local dist = (v.HumanoidRootPart.Position - PosMon.Position).Magnitude
-						if stabilizedMobMonsters[v] then
-							LockPosition(v.HumanoidRootPart, PosMon.Position)
-						else
-							SmoothPull(v.HumanoidRootPart, PosMon, 0.4)
-							if dist < 2 then
-								LockPosition(v.HumanoidRootPart, PosMon.Position)
-								stabilizedMobMonsters[v] = {
-									Position = PosMon.Position,
-									LastUpdate = tick(),
-									RockSpeedX = math.random(1, 3) * 0.05,
-									RockSpeedZ = math.random(1, 3) * 0.05,
-									FloatPhase = math.random(0, 2 * math.pi)
-								}
-							end
-						end
-					end
-				end
-				local enemies = {}
-				for _, mob in ipairs(enemiesFolder:GetChildren()) do
-					if mob:FindFirstChild("Humanoid") and mob:FindFirstChild("HumanoidRootPart") and mob.Humanoid.Health > 0 then
-						enemies[#enemies + 1] = mob
-					end
-				end
-				local count, radius = #enemies, 6
-				for i, mob in ipairs(enemies) do
-					local hrp = mob:FindFirstChild("HumanoidRootPart")
-					if hrp then
-						local angle = (2 * math.pi / math.max(count, 1)) * (i - 1)
-						local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
-						local targetPos = Vector3.new(hrpPlayer.Position.X + offset.X, hrpPlayer.Position.Y - 3.5, hrpPlayer.Position.Z + offset.Z)
-						local bp = hrp:FindFirstChild("BodyPosition")
-						if not bp then
-							bp = Instance.new("BodyPosition")
-							bp.Name = "BodyPosition"
-							bp.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-							bp.D = 1000
-							bp.P = 5000
-							bp.Parent = hrp
-						end
-						bp.Position = targetPos
-						local bv = hrp:FindFirstChild("BodyVelocity")
-						if bv then
-							bv:Destroy()
-						end
-						task.spawn(function()
-							for _, part in pairs(mob:GetDescendants()) do
-								if part:IsA("BasePart") then
-									part.CanCollide = false
-								end
-							end
-						end)
-						local hum = mob:FindFirstChildOfClass("Humanoid")
-						if hum then
-							hum.WalkSpeed = 0
-							hum.JumpPower = 0
-							pcall(function()
-								hum:ChangeState(14)
-							end)
-						end
-						pcall(function()
-							sethiddenproperty(player, "SimulationRadius", math.huge)
-						end)
-					end
-				end
-			end
-		end
-	end
-end)
-
-spawn(function()
-	game:GetService("RunService").RenderStepped:Connect(function()
-		pcall(function()
-			for monster, data in pairs(stabilizedMobMonsters) do
-				if monster and monster.Parent and monster:FindFirstChild("HumanoidRootPart") and monster.Humanoid.Health > 0 then
-					local t = tick()
-					local offsetX = math.sin(t * data.RockSpeedX + data.FloatPhase) * 0.5
-					local offsetZ = math.cos(t * data.RockSpeedZ + data.FloatPhase) * 0.5
-					local shakeOffset = Vector3.new(offsetX, 0, offsetZ)
-					LockPosition(monster.HumanoidRootPart, data.Position + shakeOffset)
-					data.LastUpdate = tick()
-				else
-					stabilizedMobMonsters[monster] = nil
-				end
-			end
-		end)
 	end)
-end)
-
-BringMob(true)
-
-task.spawn(function()
-	game:GetService("RunService").RenderStepped:Connect(function()
-		pcall(function()
-			for monster, data in pairs(stabilizedMobMonsters) do
-				if monster and monster.Parent and monster:FindFirstChild("HumanoidRootPart") and monster:FindFirstChild("Humanoid") and monster.Humanoid.Health > 0 then
-					local t = tick()
-					local offsetX = math.sin(t * data.RockSpeedX + data.FloatPhase) * 0.5
-					local offsetZ = math.cos(t * data.RockSpeedZ + data.FloatPhase) * 0.5
-					local shakeOffset = Vector3.new(offsetX, 0, offsetZ)
-					LockPosition(monster.HumanoidRootPart, data.Position + shakeOffset)
-					data.LastUpdate = t
-				else
-					stabilizedMobMonsters[monster] = nil
-				end
-			end
-		end)
-	end)
-end)
+end
