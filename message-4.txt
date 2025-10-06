@@ -144,22 +144,17 @@ BringMob = function(value)
 end
 BringMob(true)
 
-_G["BringMob"] = true
-task.spawn(function()
+BringEnemies = function(mmb)
 	while task.wait() do
-		if not _G["BringMob"] then
-			continue
-		end
-
 		local player = game.Players.LocalPlayer
 		local character = player.Character
 		if not character or not character:FindFirstChild("HumanoidRootPart") then
-			break
+			continue
 		end
 		local hrpPlayer = character.HumanoidRootPart
 		local enemiesFolder = workspace:FindFirstChild("Enemies")
 		if not enemiesFolder then
-			break
+			continue
 		end
 
 		local enemies = {}
@@ -177,16 +172,16 @@ task.spawn(function()
 		for i, mob in ipairs(enemies) do
 			local hrp = mob:FindFirstChild("HumanoidRootPart")
 			if not hrp then
-				break
+				continue
 			end
 
 			local angle = (2 * math.pi / math.max(count, 1)) * (i - 1)
 			local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * radius
 			local targetPos = Vector3.new(
-	hrpPlayer.Position.X + offset.X,
-	hrpPlayer.Position.Y - 3.5, 
-	hrpPlayer.Position.Z + offset.Z
-)
+				hrpPlayer.Position.X + offset.X,
+				hrpPlayer.Position.Y - 3.5, 
+				hrpPlayer.Position.Z + offset.Z
+			)
 		
 			local bp = hrp:FindFirstChild("BodyPosition")
 			if not bp then
@@ -199,13 +194,11 @@ task.spawn(function()
 			end
 			bp.Position = targetPos
 
-		
 			local bv = hrp:FindFirstChild("BodyVelocity")
 			if bv then
 				bv:Destroy()
 			end
 
-	
 			task.spawn(function()
 				for _, part in pairs(mob:GetDescendants()) do
 					if part:IsA("BasePart") then
@@ -224,8 +217,9 @@ task.spawn(function()
 			end
 
 			pcall(function()
-				sethiddenproperty(player, "SimulationRadius", math.huge)
+                (function()local p=game:GetService("Players").LocalPlayer;(function()sethiddenproperty(p,"SimulationRadius",math.huge)end)();return function(h)return(isnetworkowner and isnetworkowner(h))or not isnetworkowner end end)()
 			end)
 		end
 	end
-end)
+end
+BringEnemies(mmb, v, true)
