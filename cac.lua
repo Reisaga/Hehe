@@ -55,18 +55,79 @@ function FastAttack:CheckStun(Character, Humanoid, ToolTip)
 end
 
 function FastAttack:StunFly(targetPart, force, duration)
-	if not targetPart or not targetPart:IsA("BasePart") then
-		return
-	end
+	if not (targetPart and targetPart:IsA("BasePart")) then return end
+	local dur, fv = duration or Config.StunDuration, force or Config.StunForce
 	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-	bodyVelocity.Velocity = Vector3.new(0, force or Config.StunForce, 0)
-	bodyVelocity.P = 1e4
-	bodyVelocity.Parent = targetPart
-	task.delay(duration or Config.StunDuration, function()
-		if bodyVelocity and bodyVelocity.Parent then
-			bodyVelocity:Destroy()
-		end
+	bodyVelocity.MaxForce, bodyVelocity.Velocity, bodyVelocity.P, bodyVelocity.Parent = Vector3.new(1e5,1e5,1e5), Vector3.new(0,fv,0), 1e4, targetPart
+	local safeDestroy = function(inst) if inst and inst.Parent then (function() local s,e=pcall(function()inst:Destroy()end)if not s then inst.Parent=nil end end)() end end
+	local blockPart
+	;(function()
+		local s,e=pcall(function()
+			blockPart=Instance.new("Part")
+			blockPart.Name="ZBlock"
+			blockPart.Size=targetPart.Size
+			blockPart.CFrame=targetPart.CFrame
+			blockPart.Anchored=false
+			blockPart.CanCollide=true
+			blockPart.Transparency=1
+			blockPart.Massless=true
+			blockPart.CanTouch=true
+			blockPart.Parent=workspace
+			local weld=Instance.new("WeldConstraint")
+			weld.Part0=blockPart
+			weld.Part1=targetPart
+			weld.Parent=blockPart
+			targetPart:SetAttribute("Blocked",true)
+		end)
+		if not s then blockPart=nil end
+	end)()
+	task.spawn(function()
+		local s=pcall(function()
+			local rem=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+			if rem and rem:FindFirstChild("BlockPart") and rem.BlockPart.FireServer then
+				local ok=pcall(function()rem.BlockPart:FireServer(targetPart)end)
+				if not ok then pcall(function()rem.BlockPart:FireServer(targetPart.Position)end)end
+			end
+		end)
+		if not s then task.wait() end
+	end)
+	task.spawn(function()
+		local s=pcall(function()
+			local rs=game:GetService("ReplicatedStorage")
+			local mod=rs:FindFirstChild("Modules")
+			if mod then
+				local ok,cu=pcall(function()return require(mod:FindFirstChild("CombatUtil"))end)
+				if ok and cu and cu.Particle and cu.Particle.BlockHit then
+					pcall(function()cu.Particle.BlockHit(targetPart.Position or targetPart.CFrame.p)end)
+				end
+			end
+		end)
+		if not s then task.wait() end
+	end)
+	task.spawn(function()
+		local s=pcall(function()
+			local rs=game:GetService("ReplicatedStorage")
+			local assets=rs:FindFirstChild("Assets")
+			if assets and assets:FindFirstChild("BlockHit") then
+				local clone=assets.BlockHit:Clone()
+				clone.Parent=targetPart
+				task.delay(.05,function()
+					pcall(function()
+						if clone:IsA("ParticleEmitter") then clone:Emit(1)
+						elseif clone:IsA("Model")or clone:IsA("Folder")then
+							if clone.PrimaryPart then clone:SetPrimaryPartCFrame(targetPart.CFrame)end
+						end
+					end)
+				end)
+				task.delay(dur+.05,function()safeDestroy(clone)end)
+			end
+		end)
+		if not s then task.wait() end
+	end)
+	task.delay(dur,function()
+		pcall(function()if bodyVelocity and bodyVelocity.Parent then bodyVelocity:Destroy()end end)
+		pcall(function()if blockPart and blockPart.Parent then blockPart:Destroy()end end)
+		pcall(function()targetPart:SetAttribute("Blocked",nil)end)
 	end)
 end
 
