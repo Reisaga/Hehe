@@ -356,3 +356,156 @@ function Funcs:Attack()
 		pcall(function() Register_Hit:FireServer(unpack(args)) end)
 	until true
 end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = workspace
+
+local Player = Players.LocalPlayer
+local FAST_ATTACK_RANGE = 100
+local MONSTER_CHECK_RANGE = 50
+
+local NetFolder = ReplicatedStorage.Modules.Net
+local AttackEvent = NetFolder:WaitForChild("RE/RegisterAttack")
+local HitEvent = NetFolder:WaitForChild("RE/RegisterHit")
+
+local function IsAlive(c)
+    local h = c:FindFirstChild("Humanoid")
+    return h and h.Health > 0
+end
+
+local function GetRoot(c)
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetEnemiesInRange(r)
+    local p = GetRoot(Player.Character)
+    if not p then return {} end
+    local t = {}
+    for _, e in ipairs(Workspace.Enemies:GetChildren()) do
+        if IsAlive(e) then
+            local er = GetRoot(e)
+            if er and (er.Position - p.Position).Magnitude <= r then
+                t[#t+1] = e
+            end
+        end
+    end
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= Player and pl.Character and IsAlive(pl.Character) then
+            local pr = GetRoot(pl.Character)
+            if pr and (pr.Position - p.Position).Magnitude <= r then
+                t[#t+1] = pl.Character
+            end
+        end
+    end
+    return t
+end
+
+local function FindMonster()
+    local pr = GetRoot(Player.Character)
+    if not pr then return false,nil end
+    for _, e in ipairs(Workspace.Enemies:GetChildren()) do
+        local hr = GetRoot(e)
+        local limb = e:FindFirstChild("UpperTorso") or e:FindFirstChild("Head")
+        if hr and limb and (hr.Position - pr.Position).Magnitude <= MONSTER_CHECK_RANGE then
+            return true, limb.Position
+        end
+    end
+    for _, b in ipairs(Workspace.SeaBeasts:GetChildren()) do
+        if b:FindFirstChild("Health") and b.Health.Value > 0 then
+            local br = GetRoot(b)
+            if br then return true, br.Position end
+        end
+    end
+    for _, v in ipairs(Workspace.Enemies:GetChildren()) do
+        if v:FindFirstChild("Health") and v.Health.Value > 0 and v:FindFirstChild("Engine") then
+            return true, v.Engine.Position
+        end
+    end
+    return false,nil
+end
+
+local function StunAndPull(e)
+    local r = GetRoot(e)
+    local pr = GetRoot(Player.Character)
+    if r and pr then
+        r.Anchored = false
+        r.CFrame = pr.CFrame * CFrame.new(0,0,-4)
+        local bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(9e9,9e9,9e9)
+        bv.Velocity = (pr.Position - r.Position).Unit * 20
+        bv.Parent = r
+        task.delay(0.15,function()
+            if bv then bv:Destroy() end
+        end)
+    end
+end
+
+local function PerformAttack()
+    local c = Player.Character
+    if not c then return end
+    local tool = c:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    local enemies = GetEnemiesInRange(FAST_ATTACK_RANGE)
+    if #enemies == 0 then return end
+
+    local hits = {}
+    local main = nil
+    local limbs = {"RightLowerArm","RightUpperArm","LeftLowerArm","LeftUpperArm","RightHand","LeftHand"}
+
+    for _, e in ipairs(enemies) do
+        if not e:GetAttribute("IsBoat") then
+            StunAndPull(e)
+            local part = e:FindFirstChild(limbs[math.random(#limbs)]) or GetRoot(e)
+            if part then
+                hits[#hits+1] = {e,part}
+                main = main or part
+            end
+        end
+    end
+
+    if not main then return end
+
+    AttackEvent:FireServer(0)
+
+    local ls = Player.PlayerScripts:FindFirstChildOfClass("LocalScript")
+    local hitfunc = nil
+    if ls then
+        local s, env = pcall(getsenv, ls)
+        hitfunc = s and rawget(env,"_G") and env._G.SendHitsToServer
+    end
+
+    local ok, flags = pcall(function() return require(ReplicatedStorage.Modules.Flags) end)
+    local thread = ok and flags.COMBAT_REMOTE_THREAD
+
+    if hitfunc and thread then
+        hitfunc(main, hits)
+    else
+        HitEvent:FireServer(main, hits)
+    end
+end
+
+local function HandleFruitSkill()
+    local c = Player.Character
+    if not c then return end
+    local tool = c:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    local tt = tool:FindFirstChild("ToolTip")
+    if not tt or tt.Value ~= "Blox Fruit" then return end
+    local ok, pos = FindMonster()
+    if not ok then return end
+    local r = tool:FindFirstChild("LeftClickRemote")
+    if r then
+        r:FireServer(Vector3.new(0,-500,0),1,true)
+        task.wait(0.03)
+        r:FireServer(false)
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if _V and _V.FastAttack then
+        pcall(PerformAttack)
+        pcall(HandleFruitSkill)
+    end
+end)
