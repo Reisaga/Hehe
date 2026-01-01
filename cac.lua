@@ -302,6 +302,9 @@ function BladeHandler:Getplayerhit()
 end
 
 local handler = BladeHandler.new()
+RunService.Stepped:Connect(function()
+	handler:Attack()
+end)
 
 function Funcs:Attack()
 	local bladehits = {}
@@ -356,6 +359,8 @@ function Funcs:Attack()
 		pcall(function() Register_Hit:FireServer(unpack(args)) end)
 	until true
 end
+
+Funcs:Attack()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -509,3 +514,86 @@ RunService.Heartbeat:Connect(function()
         pcall(HandleFruitSkill)
     end
 end)
+
+local function FastAttack()
+    local char = character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local parts = {}
+    for _, v in ipairs(workspace.Enemies:GetChildren()) do
+        local hrp = v:FindFirstChild("HumanoidRootPart")
+        local hum = v:FindFirstChild("Humanoid")
+        if v ~= char and hrp and hum and hum.Health > 0 and plr:DistanceFromCharacter(hrp.Position) <= 35 then
+            for _, _v in ipairs(v:GetChildren()) do
+                if _v:IsA("BasePart") and plr:DistanceFromCharacter(hrp.Position) <= 35 then
+                    parts[#parts + 1] = {v, _v}
+                end
+            end
+        end
+    end
+    if #parts == 0 then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if #parts > 0 and tool and (tool.ToolTip == "Melee" or tool.ToolTip == "Sword") then
+        require(game.ReplicatedStorage.Modules.Net):RemoteEvent("RegisterHit", true)
+        require(game.ReplicatedStorage.Modules.Net):RemoteEvent("ReceivedHit")
+        game.ReplicatedStorage.Modules.Net["RE/RegisterAttack"]:FireServer()
+        local head = parts[1][1]:FindFirstChild("Head")
+        game.ReplicatedStorage.Modules.Net["RE/RegisterHit"]:FireServer(head, parts, {}, tostring(game.Players.LocalPlayer.UserId):sub(2, 4) .. tostring(coroutine.running()):sub(11, 15))
+        local encryptedEventName = string.gsub("RE/RegisterHit", ".", function(c)
+            return string.char(bit32.bxor(string.byte(c), math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1))
+        end)
+        cloneref(remote):FireServer(
+            encryptedEventName,
+            bit32.bxor(idremote + 909090, game.ReplicatedStorage.Modules.Net.seed:InvokeServer() * 2), 
+            head, 
+            parts
+        )
+    end
+end
+
+local lastCallFA = tick()
+local FastAttack = function(x)
+    if not HumanoidRootPart or not Character:FindFirstChildWhichIsA("Humanoid") or Character.Humanoid.Health <= 0 or not Character:FindFirstChildWhichIsA("Tool") then 
+        return 
+    end
+    local FAD = 1e9 -- Fast Attack Delay (in seconds)
+    if FAD ~= 0 and tick() - lastCallFA <= FAD then 
+        return 
+    end
+    local targets = {}
+    for _, enemy in next, workspace.Enemies:GetChildren() do
+        local humanoid = enemy:FindFirstChild("Humanoid")
+        local enemyRoot = enemy:FindFirstChild("HumanoidRootPart")
+        if enemy ~= Character and (x and enemy.Name == x or not x) and humanoid and enemyRoot and humanoid.Health > 0 then
+            local distance = (enemyRoot.Position - HumanoidRootPart.Position).Magnitude
+            if distance <= 500 then
+                targets[#targets + 1] = enemy
+            end
+        end
+    end
+    if #targets == 0 then return end
+    local network = ReplicatedStorage.Modules.Net
+    local hitData = {[2] = {}}
+    for i = 1, #targets do 
+        local enemy = targets[i]
+        local hitPart = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
+        
+        if not hitData[1] then 
+            hitData[1] = hitPart 
+        end
+        
+        hitData[2][#hitData[2] + 1] = {enemy, hitPart}
+    end
+    network:FindFirstChild("RE/RegisterAttack"):FireServer()
+    network:FindFirstChild("RE/RegisterHit"):FireServer(unpack(hitData))
+    local encryptedEvent = string.gsub("RE/RegisterHit", ".", function(c)
+        return string.char(bit32.bxor(string.byte(c), math.floor(workspace:GetServerTimeNow() / 10 % 10) + 1))
+    end)
+    cloneref(remoteAttack):FireServer(
+        encryptedEvent,
+        bit32.bxor(idremote + 909090, seed * 2),
+        unpack(hitData)
+    )
+    lastCallFA = tick()
+end
+
+FastAttack(true)
