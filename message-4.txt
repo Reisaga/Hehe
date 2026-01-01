@@ -223,3 +223,283 @@ BringEnemies = function(mmb)
 	end
 end
 BringEnemies(mmb, v, true)
+--bu cac
+local bringMob = newcclosure(function(v,s)
+    local xpcallHandler = function() end
+    xpcall(function()
+        if typeof(setscriptable) == "function" then setscriptable(game:GetService("Players").LocalPlayer, "SimulationRadius", true) end
+        if typeof(sethiddenproperty) == "function" then sethiddenproperty(game:GetService("Players").LocalPlayer, "SimulationRadius", math.huge) end
+        local localPlayer = game:GetService("Players").LocalPlayer
+        local character = localPlayer.Character
+        local p = character and character:FindFirstChild("HumanoidRootPart")
+        if not p then return end
+        local targets = {}
+        local workspaceEnemies = workspace:FindFirstChild("Enemies")
+        if workspaceEnemies then
+            for _, x in next, workspaceEnemies:GetChildren() do
+                if #targets >= 5 then break end
+                local hrp = x:FindFirstChild("HumanoidRootPart")
+                local hum = x:FindFirstChild("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local nameCheck = not v or x.Name == v
+                    local distanceCheck = (p.Position - hrp.Position).Magnitude <= 1e9
+                    if nameCheck and distanceCheck then
+                        targets[#targets + 1] = x
+                    end
+                end
+            end
+        end
+        if #targets == 0 then return end
+        local t = targets[1].HumanoidRootPart.CFrame
+        for _, x in next, targets do
+            local targetHrp = x:FindFirstChild("HumanoidRootPart")
+            if targetHrp then
+                targetHrp.CFrame = t
+            end
+        end
+        for _, npc in next, workspaceEnemies:GetChildren() do
+            local hrp = npc:FindFirstChild("HumanoidRootPart")
+            local hum = npc:FindFirstChild("Humanoid")
+            if hrp and hum and hum.Health == hum.MaxHealth and p then
+                local distance = (p.Position - hrp.Position).Magnitude
+                if distance <= 30 then
+                    task.spawn(function()
+                        local oldPos = hrp.Position
+                        task.wait(3)
+                        local newPos = hrp.Position
+                        if (oldPos - newPos).Magnitude < 0.5 and npc:FindFirstChild('Humanoid') and npc.Humanoid.Health == npc.Humanoid.MaxHealth then
+                            if npc and npc.Parent then
+                                npc:Destroy()
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end, xpcallHandler)
+end)
+bringMob(nil,true)
+
+local BringDistance = 500
+local TrackedMobs = {}
+local AntiGhostCooldown = {}
+local MaxMobsToBring = 2
+local GhostCheckTime = 5
+local MobDamageTracker = {}
+
+function GetPosMonVector3()
+	if not PosMon then
+		return nil
+	end
+	if typeof(PosMon) == "CFrame" then
+		return PosMon.Position
+	elseif typeof(PosMon) == "Vector3" then
+		return PosMon
+	elseif typeof(PosMon) == "Instance" and PosMon:IsA("BasePart") then
+		return PosMon.Position
+	end
+end
+
+function IsValidMob(mob)
+	if not mob or not mob.Parent then
+		return false
+	end
+	if not mob:FindFirstChild("Humanoid") or not mob:FindFirstChild("HumanoidRootPart") then
+		return false
+	end
+	if mob.Humanoid.Health <= 0 then
+		return false
+	end
+	if mob.Name ~= NameMon then
+		return false
+	end
+	if mob.Name == "Ice Admiral" or mob.Name == "Don Swan" or mob.Name == "Saber Expert" or mob.Name == "Longma" then
+		return false
+	end
+	local pos = GetPosMonVector3()
+	if not pos then
+		return false
+	end
+	if (mob.HumanoidRootPart.Position - pos).Magnitude > BringDistance then
+		return false
+	end
+	if table.find(TrackedMobs, mob) then
+		return false
+	end
+	return true
+end
+
+function LockMob(mob)
+	if not mob or not mob.Parent then
+		return false
+	end
+	local root = mob:FindFirstChild("HumanoidRootPart")
+	local hum = mob:FindFirstChild("Humanoid")
+	if not root or not hum then
+		return false
+	end
+	local pos = GetPosMonVector3()
+	if not pos then
+		return
+	end
+	local isOwner = true
+	if syn and isnetworkowner then
+		local ok, res = pcall(function()
+			return isnetworkowner(root)
+		end)
+		if ok and type(res) == "boolean" then
+			isOwner = res
+		end
+	end
+	if isOwner then
+		local now = tick()
+		if not AntiGhostCooldown[mob] or now - AntiGhostCooldown[mob] > 1 then
+			AntiGhostCooldown[mob] = now
+			for _, obj in pairs(root:GetChildren()) do
+				if obj:IsA("BodyMover") then
+					obj:Destroy()
+				end
+			end
+		end
+		root.CFrame = CFrame.new(pos)
+		pcall(function()
+			if not hum:GetAttribute("OriginalWalkSpeed") then
+				hum:SetAttribute("OriginalWalkSpeed", hum.WalkSpeed)
+			end
+			if not hum:GetAttribute("OriginalJumpPower") then
+				hum:SetAttribute("OriginalJumpPower", hum.JumpPower)
+			end
+			hum.WalkSpeed = 0
+			hum.JumpPower = 0
+			hum.Sit = false
+			hum:ChangeState(14)
+			if mob:FindFirstChild("Head") then
+				mob.Head.CanCollide = false
+			end
+			root.CanCollide = false
+			sethiddenproperty(game.Players.LocalPlayer, "SimulationRadius", math.huge)
+		end)
+		if not root:FindFirstChild("HoldPos") then
+			local bp = Instance.new("BodyPosition")
+			bp.Name = "HoldPos"
+			bp.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+			bp.D = 4000
+			bp.P = 60000
+			bp.Position = pos
+			bp.Parent = root
+		else
+			root.HoldPos.Position = pos
+		end
+		if not root:FindFirstChild("HoldGyro") then
+			local bg = Instance.new("BodyGyro")
+			bg.Name = "HoldGyro"
+			bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+			bg.P = 50000
+			bg.CFrame = CFrame.new(pos)
+			bg.Parent = root
+		else
+			root.HoldGyro.CFrame = CFrame.new(pos)
+		end
+		if not MobDamageTracker[mob] then
+			MobDamageTracker[mob] = {
+				health = hum.Health,
+				time = tick()
+			}
+		end
+	end
+	return isOwner
+end
+
+function CheckGhostMob(mob)
+	if not mob or not mob.Parent then
+		return true
+	end
+	local data = MobDamageTracker[mob]
+	if not data then
+		return false
+	end
+	local hum = mob:FindFirstChild("Humanoid")
+	if not hum then
+		return true
+	end
+	local currentTime = tick()
+	if currentTime - data.time >= GhostCheckTime then
+		if math.abs(hum.Health - data.health) < 1 then
+			return true
+		else
+			MobDamageTracker[mob] = {
+				health = hum.Health,
+				time = currentTime
+			}
+		end
+	end
+	return false
+end
+
+function ReleaseMob(mob)
+	if mob and mob.Parent then
+		local root = mob:FindFirstChild("HumanoidRootPart")
+		if root then
+			for _, v in pairs(root:GetChildren()) do
+				if v:IsA("BodyMover") then
+					v:Destroy()
+				end
+			end
+			root.CanCollide = true
+		end
+		if mob:FindFirstChild("Head") then
+			mob.Head.CanCollide = true
+		end
+		local hum = mob:FindFirstChild("Humanoid")
+		if hum then
+			pcall(function()
+				hum.WalkSpeed = hum:GetAttribute("OriginalWalkSpeed") or 16
+				hum.JumpPower = hum:GetAttribute("OriginalJumpPower") or 50
+				hum:SetAttribute("OriginalWalkSpeed", nil)
+				hum:SetAttribute("OriginalJumpPower", nil)
+				hum:ChangeState(1)
+			end)
+		end
+	end
+	MobDamageTracker[mob] = nil
+	AntiGhostCooldown[mob] = nil
+end
+
+function PullMobs()
+	if not Studio["Kaitun"]["Start Farm"] or not PosMon or not NameMon then
+		return
+	end
+	local pos = GetPosMonVector3()
+	if not pos then
+		return
+	end
+	for i = #TrackedMobs, 1, -1 do
+		local mob = TrackedMobs[i]
+		if not mob or not mob.Parent or not mob:FindFirstChild("Humanoid") or mob.Humanoid.Health <= 0 or mob.Name ~= NameMon then
+			ReleaseMob(mob)
+			table.remove(TrackedMobs, i)
+		else
+			if CheckGhostMob(mob) then
+				ReleaseMob(mob)
+				table.remove(TrackedMobs, i)
+			else
+				LockMob(mob)
+			end
+		end
+	end
+	if #TrackedMobs < MaxMobsToBring then
+		for _, mob in pairs(workspace.Enemies:GetChildren()) do
+			if #TrackedMobs >= MaxMobsToBring then
+				break
+			end
+			if IsValidMob(mob) and LockMob(mob) then
+				table.insert(TrackedMobs, mob)
+			end
+		end
+	end
+end
+task.spawn(function()
+	while task.wait(0.05) do
+		pcall(PullMobs)
+	end
+end)
