@@ -167,7 +167,7 @@ BringEnemies = function(mmb)
 		end
 
 		local count = #enemies
-		local radius = 10
+		local radius = 1e9
 
 		for i, mob in ipairs(enemies) do
 			local hrp = mob:FindFirstChild("HumanoidRootPart")
@@ -280,11 +280,11 @@ local bringMob = newcclosure(function(v,s)
 end)
 bringMob(nil,true)
 
-local BringDistance = 500
+local BringDistance = 1e9
 local TrackedMobs = {}
 local AntiGhostCooldown = {}
-local MaxMobsToBring = 2
-local GhostCheckTime = 5
+local MaxMobsToBring = 5
+local GhostCheckTime = 3
 local MobDamageTracker = {}
 
 function GetPosMonVector3()
@@ -353,7 +353,7 @@ function LockMob(mob)
 	end
 	if isOwner then
 		local now = tick()
-		if not AntiGhostCooldown[mob] or now - AntiGhostCooldown[mob] > 1 then
+		if not AntiGhostCooldown[mob] or now - AntiGhostCooldown[mob] > 0.3 then
 			AntiGhostCooldown[mob] = now
 			for _, obj in pairs(root:GetChildren()) do
 				if obj:IsA("BodyMover") then
@@ -453,8 +453,8 @@ function ReleaseMob(mob)
 		local hum = mob:FindFirstChild("Humanoid")
 		if hum then
 			pcall(function()
-				hum.WalkSpeed = hum:GetAttribute("OriginalWalkSpeed") or 16
-				hum.JumpPower = hum:GetAttribute("OriginalJumpPower") or 50
+				hum.WalkSpeed = hum:GetAttribute("OriginalWalkSpeed") or 300
+				hum.JumpPower = hum:GetAttribute("OriginalJumpPower") or 350
 				hum:SetAttribute("OriginalWalkSpeed", nil)
 				hum:SetAttribute("OriginalJumpPower", nil)
 				hum:ChangeState(1)
@@ -466,7 +466,7 @@ function ReleaseMob(mob)
 end
 
 function PullMobs()
-	if not Studio["Kaitun"]["Start Farm"] or not PosMon or not NameMon then
+	if not PosMon or not NameMon then
 		return
 	end
 	local pos = GetPosMonVector3()
@@ -498,8 +498,9 @@ function PullMobs()
 		end
 	end
 end
+
 task.spawn(function()
-	while task.wait(0.05) do
+	while task.wait(0.2) do
 		pcall(PullMobs)
 	end
 end)
